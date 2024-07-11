@@ -9,6 +9,9 @@ Add central domain in `config/app.php`
 
 0. Create two migration OR copy two table from `/database/migrations` (`create_users_table` and `create_pasword_reset_tokens`) into `/database/migrations/tenant`
 
+Use these  migrations for development
+- For admin dashboard use `database/migrations/*.php`
+- For Normal user user use `database/migrations/tenant/*.php`
 
 1. `TenancyServiceProvider:class` add this  class to 
 
