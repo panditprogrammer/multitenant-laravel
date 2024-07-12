@@ -1,7 +1,31 @@
 # Multitenancy Service
 
+- Main Domain : Super User or Owner of the Application 
 
-### pre-configurations :
+- Sub Domain : User or Visitors. This user can register as tenant and manage all users and everything inside application. this is actual Application where user can access all app pages such as Home,About,Contact,Services etc.
+
+
+
+## Multi-Tenant Architecture (work-flow)
+
+```                      
+
+           (your-saas.com)  Main Domain (Super User / Owner)
+                                |
+                                |   - Create Subdomain and share the login credential to (Subdomain Owner)
+                                |
+                                |
+ (subdomain.your-saas.com)  Sub Domain ( subdomain owner) 
+                                |
+                                |   - Company/Individuals
+                                |
+        ------------------------------------------------------
+        |                       |                            |
+    Login/Register         Get subcriptions         Home,about,contact,services
+
+```
+
+## How to make Multi-tenant in laravel (pre-configurations) :
 
 Add central domain in `config/app.php`
 
@@ -55,6 +79,9 @@ public static function getCustomColumns(): array
 
 ### Modify Provider > RouteServiceProvider.php for access admin only (central domains)
 
+
+
+Make the user as admin who is registering the subdomain. this user can manage all users inside subdomain.
 
 
 ## Default routes: 
