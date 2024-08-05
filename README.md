@@ -81,7 +81,14 @@ public static function getCustomColumns(): array
 
 
 
-Make the user as admin who is registering the subdomain. this user can manage all users inside subdomain.
+Make the user as admin who is registering the subdomain. this user can manage all users inside their subdomain.
+
+create Job and Register in `Providers > TenancyServiceProvider.php` 
+
+```php artisan make:job SeedTenantJob```
+
+
+
 
 
 ## Default routes: 
