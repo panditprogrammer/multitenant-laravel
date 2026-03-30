@@ -16,10 +16,25 @@ class CreateTenantsTable extends Migration
     public function up(): void
     {
         Schema::create('tenants', function (Blueprint $table) {
-            $table->string('id')->primary();
+            $table->bigIncrements('id')->primary();
 
-            // your custom columns may go here
-
+            // Link to owner
+            $table->foreignId('owner_id')->constrained('users')->cascadeOnDelete();
+            // Library Info
+            $table->string('name');
+            // Contact Info
+            $table->string('email')->nullable();
+            $table->string('phone')->nullable();
+            $table->string('whatsapp')->nullable();
+            // Address Info
+            $table->string('state')->nullable();
+            $table->string('city')->nullable();
+            $table->text('address')->nullable();
+            $table->string('google_map_link')->nullable();
+            // Media
+            $table->string('profile_image')->nullable();
+            // Status
+            $table->boolean('is_active')->default(true);
             $table->timestamps();
             $table->json('data')->nullable();
         });

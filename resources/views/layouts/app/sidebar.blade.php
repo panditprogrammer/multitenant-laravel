@@ -15,6 +15,9 @@
                     <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
+                      <flux:sidebar.item icon="folder" :href="route('library.create')" :current="request()->routeIs('library.create')" wire:navigate>
+                        {{ __('Create Library') }}
+                    </flux:sidebar.item>
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
@@ -91,5 +94,8 @@
         {{ $slot }}
 
         @fluxScripts
+
+       @include('partials.foot')
+
     </body>
 </html>
