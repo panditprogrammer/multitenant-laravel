@@ -7,6 +7,7 @@ use Illuminate\Support\Str;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
 use Livewire\Attributes\Computed;
+use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     use WithFileUploads;
@@ -23,7 +24,7 @@ new class extends Component {
     public $address = '';
     public $google_map_link = '';
     public $domain = '';
-    public $profile_image;
+    public $profile_image = null;
 
     public $editingId = null;
 
@@ -46,15 +47,6 @@ new class extends Component {
         return Tenant::with('domains')
             ->where('owner_id', auth()->id())
             ->tap(fn($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
-            ->paginate(5);
-    }
-
-    // 📦 Load libraries
-    public function getLibrariesProperty()
-    {
-        return Tenant::with('domains') // 🔥 fix N+1
-            ->where('owner_id', auth()->id())
-            ->latest()
             ->paginate(5);
     }
 
@@ -84,8 +76,7 @@ new class extends Component {
             // ✏️ UPDATE
             $tenant = Tenant::findOrFail($this->editingId);
 
-
-            // if new image uploaded delete old one 
+            // if new image uploaded delete old one
             if ($imagePath && $tenant->profile_image) {
                 Storage::disk('public')->delete($tenant->profile_image);
             }
@@ -125,15 +116,14 @@ new class extends Component {
                 'tenant_id' => $tenant->id,
             ]);
 
-            // ⚙️ Run tenant migrations
+            // 🚨 OUTSIDE transaction
             $tenant->run(function () {
                 \Artisan::call('migrate');
             });
         }
 
+        $this->dispatch('success', ['message' => $this->editingId ? 'Library updated successfully!' : 'Library created successfully!']);
         $this->resetForm();
-
-        $this->dispatch('library-saved');
     }
 
     // ✏️ Edit
@@ -284,7 +274,7 @@ new class extends Component {
                             <div class="flex gap-2 justify-end">
 
                                 <flux:button size="sm" variant="ghost"
-                                    href="{{ $library->domains->first()->domain ? 'http://' . $library->domains->first()->domain . '.' . config('tenancy.central_domains')[1] : '#' }}"
+                                    href="{{ $library->domains->first()->domain ? 'http://' . $library->domains->first()->domain . '.' . config('tenancy.central_domains')[0] : '#' }}"
                                     target="_blank">
                                     Open
                                 </flux:button>
@@ -296,7 +286,7 @@ new class extends Component {
                                 </flux:modal.trigger>
 
                                 <flux:button size="sm" variant="danger"
-                                wire:confirm="Are you sure you want to delete this library? This action cannot be undone."
+                                    wire:confirm="Are you sure you want to delete this library? This action cannot be undone."
                                     wire:click="delete('{{ $library->id }}')">
                                     Delete
                                 </flux:button>
@@ -318,48 +308,20 @@ new class extends Component {
             <form wire:submit="save" class="space-y-4">
 
                 <flux:input wire:model="name" label="Library Name" required />
-                @error($name)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
 
+                <flux:input type="email" wire:model="email" label="Email" />
 
-                <flux:input wire:model="email" label="Email" />
-                @error($email)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
+                <flux:input type="tel" wire:model="phone" label="Phone" />
 
-                <flux:input wire:model="phone" label="Phone" />
-                @error($phone)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
-
-                <flux:input wire:model="whatsapp" label="WhatsApp" />
-                @error($whatsapp)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
-
+                <flux:input type="tel" wire:model="whatsapp" label="WhatsApp" />
 
                 <flux:input wire:model="state" label="State" />
-                @error($state)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
 
                 <flux:input wire:model="city" label="City" />
-                @error($city)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
-
 
                 <flux:textarea wire:model="address" label="Address" />
-                @error($address)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
 
-
-                <flux:input wire:model="google_map_link" label="Google Map Link" />
-                @error($google_map_link)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
+                <flux:input type="url" wire:model="google_map_link" label="Google Map Link (optional)" />
 
                 <flux:heading>Your custom domain</flux:heading>
                 <flux:input.group>
@@ -368,15 +330,7 @@ new class extends Component {
                     </flux:input.group.suffix>
                 </flux:input.group>
 
-                @error($domain)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
-
-
                 <input type="file" wire:model="profile_image" />
-                @error($profile_image)
-                    <span class="small text-red-500 text-sm">{{ $message }}</span>
-                @enderror
                 @if ($profile_image)
                     <img src="{{ $profile_image->temporaryUrl() }}" class="w-20 h-20 rounded">
                 @endif

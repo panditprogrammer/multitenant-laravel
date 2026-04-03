@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Support\Facades\Storage;
 use Stancl\Tenancy\Database\Models\Tenant as BaseTenant;
 use Stancl\Tenancy\Contracts\TenantWithDatabase;
 use Stancl\Tenancy\Database\Concerns\HasDatabase;
@@ -48,6 +49,15 @@ class Tenant extends BaseTenant implements TenantWithDatabase
         ];
     }
 
+    // delete image when tenant is deleted 
+    protected static function booted()
+    {
+        static::deleting(function ($tenant) {
+            if ($tenant->profile_image) {
+                Storage::delete($tenant->profile_image);
+            }
+        });
+    }
 
     // get profile image url or default image
     public function getProfileImageUrlAttribute(): string
