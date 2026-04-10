@@ -14,11 +14,18 @@ class Room extends Model
         'name',
         'floor',
         'is_active',
+        'library_id',
     ];
 
     // 🔗 One Room → Many Seats
     public function seats()
     {
         return $this->hasMany(Seat::class);
+    }
+
+    // 🔗 One Room → One Library
+    public function library()
+    {
+        return $this->belongsTo(Library::class);
     }
 }

@@ -1,8 +1,7 @@
 <?php
 
 use Livewire\Component;
-use App\Models\Tenant;
-use Stancl\Tenancy\Database\Models\Domain;
+use App\Models\Library;
 use Illuminate\Support\Str;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
@@ -23,7 +22,6 @@ new class extends Component {
     public $city = '';
     public $address = '';
     public $google_map_link = '';
-    public $domain = '';
     public $profile_image = null;
 
     public $editingId = null;
@@ -44,8 +42,7 @@ new class extends Component {
     #[Computed]
     public function libraries()
     {
-        return Tenant::with('domains')
-            ->where('owner_id', auth()->id())
+        return Library::where('user_id', auth()->id())
             ->tap(fn($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
             ->paginate(5);
     }
@@ -62,7 +59,6 @@ new class extends Component {
             'city' => 'required',
             'address' => 'required',
             'google_map_link' => 'nullable|url',
-            'domain' => 'required|unique:domains,domain,' . ($this->editingId ?? 'NULL') . ',tenant_id',
             'profile_image' => $this->editingId ? 'nullable|file|image|max:2048' : 'required|file|image|max:2048',
         ]);
 
@@ -74,14 +70,14 @@ new class extends Component {
 
         if ($this->editingId) {
             // ✏️ UPDATE
-            $tenant = Tenant::findOrFail($this->editingId);
+            $library = Library::findOrFail($this->editingId);
 
             // if new image uploaded delete old one
-            if ($imagePath && $tenant->profile_image) {
-                Storage::disk('public')->delete($tenant->profile_image);
+            if ($imagePath && $library->profile_image) {
+                Storage::disk('public')->delete($library->profile_image);
             }
 
-            $tenant->update([
+            $library->update([
                 'name' => $this->name,
                 'email' => $this->email,
                 'phone' => $this->phone,
@@ -90,16 +86,12 @@ new class extends Component {
                 'city' => $this->city,
                 'address' => $this->address,
                 'google_map_link' => $this->google_map_link,
-                'profile_image' => $imagePath ?? $tenant->profile_image,
-            ]);
-
-            Domain::where('tenant_id', $tenant->id)->update([
-                'domain' => $this->domain,
+                'profile_image' => $imagePath ?? $library->profile_image,
             ]);
         } else {
             // ➕ CREATE
-            $tenant = Tenant::create([
-                'owner_id' => auth()->id(),
+            $library = Library::create([
+                'user_id' => auth()->id(),
                 'name' => $this->name,
                 'email' => $this->email,
                 'phone' => $this->phone,
@@ -110,16 +102,6 @@ new class extends Component {
                 'google_map_link' => $this->google_map_link,
                 'profile_image' => $imagePath,
             ]);
-
-            Domain::create([
-                'domain' => $this->domain,
-                'tenant_id' => $tenant->id,
-            ]);
-
-            // 🚨 OUTSIDE transaction
-            $tenant->run(function () {
-                \Artisan::call('migrate');
-            });
         }
 
         $this->dispatch('success', ['message' => $this->editingId ? 'Library updated successfully!' : 'Library created successfully!']);
@@ -129,35 +111,32 @@ new class extends Component {
     // ✏️ Edit
     public function edit($id)
     {
-        $tenant = Tenant::findOrFail($id);
+        $library = Library::findOrFail($id);
 
-        $this->editingId = $tenant->id;
+        $this->editingId = $library->id;
 
-        $this->name = $tenant->name;
-        $this->email = $tenant->email;
-        $this->phone = $tenant->phone;
-        $this->whatsapp = $tenant->whatsapp;
-        $this->state = $tenant->state;
-        $this->city = $tenant->city;
-        $this->address = $tenant->address;
-        $this->google_map_link = $tenant->google_map_link;
-
-        $domain = Domain::where('tenant_id', $tenant->id)->first();
-        $this->domain = $domain->domain ?? '';
+        $this->name = $library->name;
+        $this->email = $library->email;
+        $this->phone = $library->phone;
+        $this->whatsapp = $library->whatsapp;
+        $this->state = $library->state;
+        $this->city = $library->city;
+        $this->address = $library->address;
+        $this->google_map_link = $library->google_map_link;
     }
 
     // ❌ Delete
     public function delete($id)
     {
-        Tenant::findOrFail($id)->delete();
+        Library::findOrFail($id)->delete();
 
-        $this->dispatch('library-deleted');
+        $this->dispatch('success', ['message' => 'Library deleted successfully!']);
     }
 
     // 🔄 Reset form
     public function resetForm()
     {
-        $this->reset(['name', 'email', 'phone', 'whatsapp', 'state', 'city', 'address', 'google_map_link', 'domain', 'profile_image', 'editingId']);
+        $this->reset(['name', 'email', 'phone', 'whatsapp', 'state', 'city', 'address', 'google_map_link', 'profile_image', 'editingId']);
     }
 };
 ?>
@@ -204,9 +183,6 @@ new class extends Component {
                     Created
                 </flux:table.column>
 
-                <flux:table.column>
-                    Domain
-                </flux:table.column>
 
                 <flux:table.column align="end">
                     Actions
@@ -264,17 +240,13 @@ new class extends Component {
                             {{ $library->created_at->format('d M Y') }}
                         </flux:table.cell>
 
-                        <!-- Domain -->
-                        <flux:table.cell>
-                            {{ $library->domains->first()->domain ?? '-' }}
-                        </flux:table.cell>
 
                         <!-- Actions -->
                         <flux:table.cell align="end">
                             <div class="flex gap-2 justify-end">
 
                                 <flux:button size="sm" variant="ghost"
-                                    href="{{ $library->domains->first()->domain ? 'http://' . $library->domains->first()->domain . '.' . config('tenancy.central_domains')[0] : '#' }}"
+                                    href=""
                                     target="_blank">
                                     Open
                                 </flux:button>
@@ -322,13 +294,6 @@ new class extends Component {
                 <flux:textarea wire:model="address" label="Address" />
 
                 <flux:input type="url" wire:model="google_map_link" label="Google Map Link (optional)" />
-
-                <flux:heading>Your custom domain</flux:heading>
-                <flux:input.group>
-                    <flux:input wire:model="domain" placeholder="library" required />
-                    <flux:input.group.suffix>.{{ config('tenancy.central_domains')[1] ?? 'yourdomain.com' }}
-                    </flux:input.group.suffix>
-                </flux:input.group>
 
                 <input type="file" wire:model="profile_image" />
                 @if ($profile_image)

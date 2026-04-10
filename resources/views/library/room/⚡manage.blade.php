@@ -3,9 +3,9 @@
 use Livewire\Component;
 use App\Models\Room;
 use App\Models\Seat;
+use App\Models\Library;
 
-new class extends Component
-{
+new class extends Component {
     // 🏢 Room fields
     public $name = '';
     public $floor = '';
@@ -19,10 +19,18 @@ new class extends Component
     public $end = 10;
     public $type = 'NORMAL';
 
+    public $lib_id = null;
+
     // 📦 Rooms list
     public function getRoomsProperty()
     {
         return Room::with('seats')->latest()->get();
+    }
+
+    // 📦 Libraries list
+    public function getLibrariesProperty()
+    {
+        return Library::latest()->get();
     }
 
     // 💾 Save Room
@@ -32,6 +40,7 @@ new class extends Component
             'name' => 'required|min:2',
             'floor' => 'nullable|string',
             'is_active' => 'boolean',
+            'lib_id' => 'required|exists:libraries,id',
         ]);
 
         if ($this->editingId) {
@@ -39,12 +48,14 @@ new class extends Component
                 'name' => $this->name,
                 'floor' => $this->floor,
                 'is_active' => $this->is_active,
+                'library_id' => $this->lib_id,
             ]);
         } else {
             Room::create([
                 'name' => $this->name,
                 'floor' => $this->floor,
                 'is_active' => $this->is_active,
+                'library_id' => $this->lib_id,
             ]);
         }
 
@@ -61,6 +72,7 @@ new class extends Component
         $this->name = $room->name;
         $this->floor = $room->floor;
         $this->is_active = $room->is_active;
+        $this->lib_id = $room->library_id;
     }
 
     // ❌ Delete
@@ -81,14 +93,16 @@ new class extends Component
         ]);
 
         for ($i = $this->start; $i <= $this->end; $i++) {
-
-            Seat::firstOrCreate([
-                'room_id' => $this->room_id,
-                'seat_number' => $this->prefix . $i,
-            ], [
-                'type' => $this->type,
-                'is_active' => true,
-            ]);
+            Seat::firstOrCreate(
+                [
+                    'room_id' => $this->room_id,
+                    'seat_number' => strtoupper($this->prefix) . $i,
+                ],
+                [
+                    'type' => $this->type,
+                    'is_active' => true,
+                ],
+            );
         }
 
         $this->reset(['prefix', 'start', 'end']);
@@ -102,56 +116,61 @@ new class extends Component
     <flux:heading size="lg">Manage Rooms</flux:heading>
 
     <!-- 🏢 ROOM FORM -->
-    <form wire:submit="saveRoom" class="grid grid-cols-4 gap-3">
+    <form wire:submit="saveRoom" class="grid md:grid-cols-4 gap-3">
+
+        <flux:select wire:model="lib_id" label="Library" required>
+            <flux:select.option value="">Select Library</flux:select.option>
+            @forelse ($this->libraries as $lib)
+                <flux:select.option value="{{ $lib->id }}">{{ $lib->name }}</flux:select.option>
+            @empty
+                <flux:select.option value="">No libraries available</flux:select.option>
+            @endforelse
+        </flux:select>
 
         <flux:input wire:model="name" label="Room Name" required />
 
         <flux:input wire:model="floor" label="Floor" />
 
         <!-- is_active -->
-        <select wire:model="is_active" class="border rounded p-2 mt-6">
-            <option value="1">Active</option>
-            <option value="0">Inactive</option>
-        </select>
+        <flux:select wire:model="is_active" class="mt-6">
+            <flux:select.option value="1">Active</flux:select.option>
+            <flux:select.option value="0">Inactive</flux:select.option>
+        </flux:select>
 
-        <flux:button type="submit" class="mt-6">
+        <flux:button type="submit" variant="primary" class="mt-6">
             {{ $editingId ? 'Update' : 'Create' }}
         </flux:button>
 
     </form>
 
     <!-- 💺 SEAT GENERATOR -->
-    <div class="mt-6">
+    <flux:heading size="lg">Generate Seats</flux:heading>
 
-        <flux:heading size="md">Generate Seats</flux:heading>
+    <form wire:submit="generateSeats" class="grid md:grid-cols-5 gap-3">
 
-        <form wire:submit="generateSeats" class="grid grid-cols-5 gap-3 mt-3">
+        <flux:select wire:model="room_id" label="Select Room" required>
+            <flux:select.option value="">Select Room</flux:select.option>
+            @foreach ($this->rooms as $room)
+                <flux:select.option value="{{ $room->id }}">{{ $room->name }}</flux:select.option>
+            @endforeach
+        </flux:select>
 
-            <select wire:model="room_id" class="border rounded p-2">
-                <option value="">Select Room</option>
-                @foreach($this->rooms as $room)
-                    <option value="{{ $room->id }}">{{ $room->name }}</option>
-                @endforeach
-            </select>
+        <flux:input wire:model="prefix" label="Prefix" />
 
-            <flux:input wire:model="prefix" label="Prefix" />
+        <flux:input wire:model="start" label="Start" type="number" />
 
-            <flux:input wire:model="start" label="Start" type="number" />
+        <flux:input wire:model="end" label="End" type="number" />
 
-            <flux:input wire:model="end" label="End" type="number" />
+        <flux:select wire:model="type" label="Type">
+            <flux:select.option value="NORMAL">Non AC</flux:select.option>
+            <flux:select.option value="AC">AC</flux:select.option>
+        </flux:select>
 
-            <select wire:model="type" class="border rounded p-2">
-                <option value="NORMAL">Non AC</option>
-                <option value="AC">AC</option>
-            </select>
+        <flux:button type="submit" variant="primary" class="md:col-span-2 mt-6">
+            Generate Seats
+        </flux:button>
 
-            <flux:button type="submit" class="col-span-5">
-                Generate Seats
-            </flux:button>
-
-        </form>
-
-    </div>
+    </form>
 
     <!-- 📊 FLUX TABLE -->
     <flux:table>
@@ -171,8 +190,9 @@ new class extends Component
                 <flux:table.row :key="$room->id">
 
                     <!-- Room -->
-                    <flux:table.cell>
-                        <div class="font-semibold">{{ $room->name }}</div>
+                    <flux:table.cell class="flex items-center gap-3">
+                        <flux:avatar size="xs" src="{{ $room->library?->profile_image_url }}" />
+                        {{ $room->name }}
                     </flux:table.cell>
 
                     <!-- Floor -->
@@ -192,7 +212,6 @@ new class extends Component
                         <div class="flex flex-wrap gap-1">
 
                             @forelse($room->seats as $seat)
-
                                 <flux:badge size="sm">
                                     {{ $seat->seat_number }}
                                 </flux:badge>
@@ -209,11 +228,13 @@ new class extends Component
 
                         <div class="flex gap-2 justify-end">
 
-                            <flux:button size="sm" wire:click="editRoom({{ $room->id }})">
+                            <flux:button size="sm" variant="ghost" wire:click="editRoom({{ $room->id }})">
                                 Edit
                             </flux:button>
 
-                            <flux:button size="sm" variant="danger" wire:click="deleteRoom({{ $room->id }})">
+                            <flux:button size="sm" variant="danger"
+                                wire:confirm="Are you sure you want to delete this room?"
+                                wire:click="deleteRoom({{ $room->id }})">
                                 Delete
                             </flux:button>
 

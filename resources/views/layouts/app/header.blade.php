@@ -73,8 +73,12 @@
 
         {{ $slot }}
 
-        @fluxScripts
+        @persist('toast')
+            <flux:toast.group>
+                <flux:toast />
+            </flux:toast.group>
+        @endpersist
 
-       @include('partials.foot')
+        @fluxScripts
     </body>
 </html>
