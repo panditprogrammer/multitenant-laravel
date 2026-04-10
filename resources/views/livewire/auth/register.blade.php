@@ -7,6 +7,21 @@
 
         <form method="POST" action="{{ route('register.store') }}" class="flex flex-col gap-6">
             @csrf
+
+
+            {{-- select student ,teacher or owner  --}}
+            <flux:select
+                name="role"
+                :label="__('Register as')"
+                required
+                :placeholder="__('Select a role')"
+            >
+            <flux:select.option value="student">{{ __('Student') }}</flux:select.option>
+            <flux:select.option value="teacher">{{ __('Teacher') }}</flux:select.option>
+            <flux:select.option value="owner">{{ __('Owner') }}</flux:select.option>
+
+            </flux:select>
+
             <!-- Name -->
             <flux:input
                 name="name"

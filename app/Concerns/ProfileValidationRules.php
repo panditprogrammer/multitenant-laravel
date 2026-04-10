@@ -17,6 +17,7 @@ trait ProfileValidationRules
         return [
             'name' => $this->nameRules(),
             'email' => $this->emailRules($userId),
+            'role' => ['required', 'string', Rule::in(['owner', 'teacher', 'student'])],
         ];
     }
 
