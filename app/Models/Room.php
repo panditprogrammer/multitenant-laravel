@@ -15,6 +15,8 @@ class Room extends Model
         'floor',
         'is_active',
         'library_id',
+        'type',
+        'has_wifi'
     ];
 
     // 🔗 One Room → Many Seats

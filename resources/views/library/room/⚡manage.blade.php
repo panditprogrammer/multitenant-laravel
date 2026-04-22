@@ -10,6 +10,8 @@ new class extends Component {
     public $name = '';
     public $floor = '';
     public $is_active = true;
+    public $type = 'NORMAL';
+    public $has_wifi = false;
     public $editingId = null;
 
     // 💺 Seat generator
@@ -17,7 +19,6 @@ new class extends Component {
     public $prefix = 'A';
     public $start = 1;
     public $end = 10;
-    public $type = 'NORMAL';
 
     public $lib_id = null;
 
@@ -41,12 +42,16 @@ new class extends Component {
             'floor' => 'nullable|string',
             'is_active' => 'boolean',
             'lib_id' => 'required|exists:libraries,id',
+            'type' => 'required|in:AC,NORMAL',
+            'has_wifi' => 'boolean'
         ]);
 
         if ($this->editingId) {
             Room::findOrFail($this->editingId)->update([
                 'name' => $this->name,
                 'floor' => $this->floor,
+                'has_wifi' => $this->has_wifi,
+                'type' => $this->type,
                 'is_active' => $this->is_active,
                 'library_id' => $this->lib_id,
             ]);
@@ -54,12 +59,14 @@ new class extends Component {
             Room::create([
                 'name' => $this->name,
                 'floor' => $this->floor,
+                'has_wifi' => $this->has_wifi,
+                'type' => $this->type,
                 'is_active' => $this->is_active,
                 'library_id' => $this->lib_id,
             ]);
         }
 
-        $this->reset(['name', 'floor', 'is_active', 'editingId']);
+        $this->reset(['name', 'floor','type','has_wifi', 'is_active', 'editingId']);
         $this->is_active = true; // reset default
     }
 
@@ -71,6 +78,8 @@ new class extends Component {
         $this->editingId = $room->id;
         $this->name = $room->name;
         $this->floor = $room->floor;
+        $this->has_wifi = $room->has_wifi;
+        $this->type = $room->type;
         $this->is_active = $room->is_active;
         $this->lib_id = $room->library_id;
     }
@@ -89,7 +98,6 @@ new class extends Component {
             'prefix' => 'required|string|max:2',
             'start' => 'required|integer|min:1',
             'end' => 'required|integer|gte:start',
-            'type' => 'required|in:AC,NORMAL',
         ]);
 
         for ($i = $this->start; $i <= $this->end; $i++) {
@@ -99,7 +107,6 @@ new class extends Component {
                     'seat_number' => strtoupper($this->prefix) . $i,
                 ],
                 [
-                    'type' => $this->type,
                     'is_active' => true,
                 ],
             );
@@ -131,7 +138,16 @@ new class extends Component {
 
         <flux:input wire:model="floor" label="Floor" />
 
-        <!-- is_active -->
+         <flux:select wire:model="type" label="Type">
+            <flux:select.option value="NORMAL">Non AC</flux:select.option>
+            <flux:select.option value="AC">AC</flux:select.option>
+        </flux:select>
+
+        <flux:select wire:model="has_wifi" label="Has Wifi">
+            <flux:select.option value="0">Not avaiable</flux:select.option>
+            <flux:select.option value="1">Available</flux:select.option>
+        </flux:select>
+ <!-- is_active -->
         <flux:select wire:model="is_active" class="mt-6">
             <flux:select.option value="1">Active</flux:select.option>
             <flux:select.option value="0">Inactive</flux:select.option>
@@ -161,11 +177,6 @@ new class extends Component {
 
         <flux:input wire:model="end" label="End" type="number" />
 
-        <flux:select wire:model="type" label="Type">
-            <flux:select.option value="NORMAL">Non AC</flux:select.option>
-            <flux:select.option value="AC">AC</flux:select.option>
-        </flux:select>
-
         <flux:button type="submit" variant="primary" class="md:col-span-2 mt-6">
             Generate Seats
         </flux:button>
@@ -178,8 +189,9 @@ new class extends Component {
         <flux:table.columns>
             <flux:table.column>Room</flux:table.column>
             <flux:table.column>Floor</flux:table.column>
-            <flux:table.column>Status</flux:table.column>
+            <flux:table.column>Type</flux:table.column>
             <flux:table.column>Seats</flux:table.column>
+            <flux:table.column>Status</flux:table.column>
             <flux:table.column align="end">Actions</flux:table.column>
         </flux:table.columns>
 
@@ -198,6 +210,10 @@ new class extends Component {
                     <!-- Floor -->
                     <flux:table.cell>
                         {{ $room->floor ?? '-' }}
+                    </flux:table.cell>
+
+                      <flux:table.cell>
+                        {{ $room->type ?? '-' }}   {{ $room->has_wifi ? '+ Wifi' : '' }}
                     </flux:table.cell>
 
                     <!-- Status -->

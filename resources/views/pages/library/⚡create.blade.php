@@ -2,6 +2,7 @@
 
 use Livewire\Component;
 use App\Models\Library;
+use App\Models\Shift;
 use Illuminate\Support\Str;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
@@ -23,11 +24,18 @@ new class extends Component {
     public $address = '';
     public $google_map_link = '';
     public $profile_image = null;
+    public $normal_price = 0;
+    public $ac_price = 0;
 
     public $editingId = null;
 
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
+
+    // shift
+    public $shiftLibraryId = null;
+    public $shift_count = 1;
+    public $shifts = [];
 
     public function sort($column)
     {
@@ -60,6 +68,8 @@ new class extends Component {
             'address' => 'required',
             'google_map_link' => 'nullable|url',
             'profile_image' => $this->editingId ? 'nullable|file|image|max:2048' : 'required|file|image|max:2048',
+            'normal_price' => 'required|numeric|min:0',
+            'ac_price' => 'required|numeric|min:0',
         ]);
 
         // 📸 Upload image
@@ -87,6 +97,8 @@ new class extends Component {
                 'address' => $this->address,
                 'google_map_link' => $this->google_map_link,
                 'profile_image' => $imagePath ?? $library->profile_image,
+                'normal_price' => $this->normal_price,
+                'ac_price' => $this->ac_price,
             ]);
         } else {
             // ➕ CREATE
@@ -101,6 +113,8 @@ new class extends Component {
                 'address' => $this->address,
                 'google_map_link' => $this->google_map_link,
                 'profile_image' => $imagePath,
+                'normal_price' => $this->normal_price,
+                'ac_price' => $this->ac_price,
             ]);
         }
 
@@ -123,6 +137,8 @@ new class extends Component {
         $this->city = $library->city;
         $this->address = $library->address;
         $this->google_map_link = $library->google_map_link;
+        $this->normal_price = $library->normal_price;
+        $this->ac_price = $library->ac_price;
     }
 
     // ❌ Delete
@@ -137,6 +153,81 @@ new class extends Component {
     public function resetForm()
     {
         $this->reset(['name', 'email', 'phone', 'whatsapp', 'state', 'city', 'address', 'google_map_link', 'profile_image', 'editingId']);
+    }
+
+    // shift
+    // 🔥 Open shift modal
+    public function openShiftModal($libraryId)
+    {
+        $this->shiftLibraryId = $libraryId;
+        $this->loadShifts();
+    }
+
+    // 🔥 Load existing shifts
+    public function loadShifts()
+    {
+        $this->shifts = Shift::where('library_id', $this->shiftLibraryId)
+            ->get()
+            ->map(
+                fn($s) => [
+                    'name' => $s->name,
+                    'start_time' => $s->start_time,
+                    'end_time' => $s->end_time,
+                ],
+            )
+            ->toArray();
+    }
+
+    // 🔥 Generate shifts
+    public function generateShifts()
+    {
+        $library = Library::find($this->shiftLibraryId);
+        if (!$library) {
+            return;
+        }
+
+        $count = min($this->shift_count, 3);
+
+        $open = strtotime($library->open_time);
+        $close = strtotime($library->close_time);
+
+        $total = $close - $open;
+        $perShift = $total / $count;
+
+        $this->shifts = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $start = $open + $i * $perShift;
+            $end = $i == $count - 1 ? $close : $start + $perShift;
+
+            $this->shifts[] = [
+                'name' => 'Shift ' . ($i + 1),
+                'start_time' => date('H:i', $start),
+                'end_time' => date('H:i', $end),
+            ];
+        }
+    }
+
+    // 🔥 Save shifts
+    public function saveShifts()
+    {
+        if (!$this->shiftLibraryId) {
+            return;
+        }
+
+        // delete old shifts
+        Shift::where('library_id', $this->shiftLibraryId)->delete();
+
+        foreach ($this->shifts as $shift) {
+            Shift::create([
+                'library_id' => $this->shiftLibraryId,
+                'name' => $shift['name'],
+                'start_time' => $shift['start_time'],
+                'end_time' => $shift['end_time'],
+            ]);
+        }
+
+        $this->dispatch('success', ['message' => 'Shifts saved successfully']);
     }
 };
 ?>
@@ -245,11 +336,12 @@ new class extends Component {
                         <flux:table.cell align="end">
                             <div class="flex gap-2 justify-end">
 
-                                <flux:button size="sm" variant="ghost"
-                                    href=""
-                                    target="_blank">
-                                    Open
-                                </flux:button>
+                                <flux:modal.trigger name="shift-modal">
+                                    <flux:button size="sm" variant="outline"
+                                        wire:click="openShiftModal('{{ $library->id }}')">
+                                        Shifts
+                                    </flux:button>
+                                </flux:modal.trigger>
 
                                 <flux:modal.trigger name="create-library-modal">
                                     <flux:button size="sm" wire:click="edit('{{ $library->id }}')">
@@ -300,6 +392,9 @@ new class extends Component {
                     <img src="{{ $profile_image->temporaryUrl() }}" class="w-20 h-20 rounded">
                 @endif
 
+                <flux:input class="col-6" type="number" wire:model="normal_price" label="Normal Seat Price (₹)"
+                    required />
+                <flux:input class="col-6" type="number" wire:model="ac_price" label="AC Seat Price (₹)" required />
 
                 <flux:button type="submit">
                     {{ $editingId ? 'Update Library' : 'Create Library' }}
@@ -307,5 +402,75 @@ new class extends Component {
 
             </form>
         </div>
+    </flux:modal>
+
+    <flux:modal name="shift-modal" class="w-full max-w-3xl">
+
+        <div class="space-y-6">
+
+            <flux:heading size="lg">Shift Management</flux:heading>
+
+            <!-- Controls -->
+            <div class="grid grid-cols-3 gap-4">
+
+                <flux:select wire:model="shift_count" label="Number of Shifts">
+                    <option value="1">1 Shift</option>
+                    <option value="2">2 Shifts</option>
+                    <option value="3">3 Shifts</option>
+                </flux:select>
+
+                <div class="flex items-end">
+                    <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted"
+                        wire:click="generateShifts">
+                        Generate
+                    </flux:button>
+                </div>
+
+            </div>
+
+            <!-- Shift Table -->
+            @if (count($shifts))
+
+                <flux:table>
+
+                    <flux:table.columns>
+                        <flux:table.column>Shift</flux:table.column>
+                        <flux:table.column>Start</flux:table.column>
+                        <flux:table.column>End</flux:table.column>
+                    </flux:table.columns>
+
+                    <flux:table.rows>
+
+                        @foreach ($shifts as $i => $shift)
+                            <flux:table.row>
+
+                                <flux:table.cell>
+                                    {{ $shift['name'] }}
+                                </flux:table.cell>
+
+                                <flux:table.cell>
+                                    {{ $shift['start_time'] }}
+                                </flux:table.cell>
+
+                                <flux:table.cell>
+                                    {{ $shift['end_time'] }}
+                                </flux:table.cell>
+                            </flux:table.row>
+                        @endforeach
+
+                    </flux:table.rows>
+
+                </flux:table>
+
+                <div class="flex justify-end">
+                    <flux:button variant="filled" wire:click="saveShifts">
+                        Save Shifts
+                    </flux:button>
+                </div>
+
+            @endif
+
+        </div>
+
     </flux:modal>
 </section>

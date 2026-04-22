@@ -31,6 +31,11 @@ return new class extends Migration
             $table->string('profile_image')->nullable();
             // Status
             $table->boolean('is_active')->default(true);
+            $table->time('open_time')->default('06:00:00');
+            $table->time('close_time')->default('20:00:00');
+            $table->decimal('normal_price', 8, 2)->nullable();
+            $table->decimal('ac_price', 8, 2)->nullable();
+            $table->string('currency')->default('INR');
             $table->timestamps();
         });
     }
