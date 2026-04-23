@@ -93,8 +93,14 @@ new class extends Component {
             ->where(function ($q) use ($endDate) {
                 $q->where('start_date', '<=', $endDate)->where('end_date', '>=', $this->start_date);
             })
-            ->whereHas('shifts', function ($sq) {
-                $sq->whereIn('shift_id', $this->shift_ids);
+            ->where(function ($shiftQuery) {
+                $shiftQuery->whereHas('shifts', function ($sq) {
+                    $sq->whereIn('shifts.id', $this->shift_ids);
+                })->orWhere(function ($legacyQuery) {
+                    foreach ($this->shift_ids as $shiftId) {
+                        $legacyQuery->orWhereJsonContains('shift_ids', $shiftId);
+                    }
+                });
             })
             ->exists();
     }
@@ -106,8 +112,14 @@ new class extends Component {
             ->where(function ($q) use ($endDate) {
                 $q->where('start_date', '<=', $endDate)->where('end_date', '>=', $this->start_date);
             })
-            ->whereHas('shifts', function ($sq) {
-                $sq->whereIn('shift_id', $this->shift_ids);
+            ->where(function ($shiftQuery) {
+                $shiftQuery->whereHas('shifts', function ($sq) {
+                    $sq->whereIn('shifts.id', $this->shift_ids);
+                })->orWhere(function ($legacyQuery) {
+                    foreach ($this->shift_ids as $shiftId) {
+                        $legacyQuery->orWhereJsonContains('shift_ids', $shiftId);
+                    }
+                });
             })
             ->exists();
     }
@@ -154,6 +166,7 @@ new class extends Component {
             'user_id' => $this->user_id,
             'seat_id' => $this->seat_id,
             'library_id' => $this->library_id,
+            'shift_ids' => $this->shift_ids,
             'start_date' => $this->start_date,
             'end_date' => $endDate,
             'amount' => $this->amount,

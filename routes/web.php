@@ -1,6 +1,6 @@
 <?php
 
-use App\Models\Membership;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -8,7 +8,7 @@ Route::view('/', 'welcome')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('dashboard', function () {
-        if (auth()->user()->role === 'student') {
+        if (Auth::user()->role === 'student') {
             return redirect()->route('student.dashboard');
         }
 

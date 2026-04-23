@@ -88,9 +88,13 @@ new class extends Component {
                     ->where('status', 'active')
                     ->whereDate('end_date', '>=', now())
                     ->where(function ($query) {
-                        foreach ($this->shift_ids as $shiftId) {
-                            $query->orWhereJsonContains('shift_ids', $shiftId);
-                        }
+                        $query->whereHas('shifts', function ($shiftQuery) {
+                            $shiftQuery->whereIn('shifts.id', $this->shift_ids);
+                        })->orWhere(function ($legacyQuery) {
+                            foreach ($this->shift_ids as $shiftId) {
+                                $legacyQuery->orWhereJsonContains('shift_ids', $shiftId);
+                            }
+                        });
                     })
                     ->first();
 
@@ -139,7 +143,7 @@ new class extends Component {
                 'library_id' => $this->library_id,
             ]);
 
-            Membership::create([
+            $membership = Membership::create([
                 'library_id' => $this->library_id,
                 'user_id' => $student->id,
                 'seat_id' => $this->seat_id,
@@ -149,6 +153,8 @@ new class extends Component {
                 'amount' => $this->amount,
                 'status' => 'active',
             ]);
+
+            $membership->shifts()->sync($this->shift_ids);
         });
 
         session()->flash('success', 'Student admitted successfully');

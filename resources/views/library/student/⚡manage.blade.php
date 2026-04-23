@@ -58,7 +58,11 @@ new class extends Component {
                 }
 
                 if ($this->filter_shift_id) {
-                    $q->whereJsonContains('shift_ids', $this->filter_shift_id);
+                    $q->where(function ($shiftQuery) {
+                        $shiftQuery->whereHas('shifts', function ($sq) {
+                            $sq->where('shifts.id', $this->filter_shift_id);
+                        })->orWhereJsonContains('shift_ids', $this->filter_shift_id);
+                    });
                 }
             });
         }
