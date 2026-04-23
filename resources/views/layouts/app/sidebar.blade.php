@@ -12,7 +12,12 @@
 
             <flux:sidebar.nav>
                 <flux:sidebar.group :heading="__('Platform')" class="grid">
-                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard', 'student.dashboard')" wire:navigate>
+                    <flux:sidebar.item
+                        icon="home"
+                        :href="auth()->user()->role === 'student' ? route('student.dashboard') : (auth()->user()->role === 'owner' ? route('owner.dashboard') : route('dashboard'))"
+                        :current="request()->routeIs('dashboard', 'student.dashboard', 'owner.dashboard')"
+                        wire:navigate
+                    >
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
                     @if (auth()->user()->role === 'owner')

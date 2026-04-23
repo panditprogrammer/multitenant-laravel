@@ -12,11 +12,16 @@ Route::middleware(['auth', 'verified'])->group(function () {
             return redirect()->route('student.dashboard');
         }
 
+        if (Auth::user()->role === 'owner') {
+            return redirect()->route('owner.dashboard');
+        }
+
         return view('dashboard');
     })->name('dashboard');
 
     // owner routes
     Route::middleware(['auth', 'role:owner'])->group(function () {
+        Route::livewire('owner/dashboard', 'pages::dashboard')->name('owner.dashboard');
         Route::livewire('library/create', 'pages::library.create')->name('library.create');
         Route::livewire('room/manage', 'library::room.manage')->name('room.manage');
         Route::livewire('student/manage', 'library::student.manage')->name('student.manage');
