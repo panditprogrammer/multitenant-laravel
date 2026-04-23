@@ -1,13 +1,12 @@
 <?php
 
-use Livewire\Component;
 use App\Models\Library;
 use App\Models\Shift;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Attributes\Computed;
+use Livewire\Component;
 use Livewire\WithFileUploads;
 use Livewire\WithPagination;
-use Livewire\Attributes\Computed;
-use Illuminate\Support\Facades\DB;
 
 new class extends Component {
     use WithFileUploads;
@@ -32,10 +31,14 @@ new class extends Component {
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
 
-    // shift
     public $shiftLibraryId = null;
     public $shift_count = 1;
     public $shifts = [];
+
+    public function startCreate()
+    {
+        $this->resetForm();
+    }
 
     public function sort($column)
     {
@@ -51,11 +54,26 @@ new class extends Component {
     public function libraries()
     {
         return Library::where('user_id', auth()->id())
-            ->tap(fn($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
+            ->withCount(['rooms', 'students', 'shifts'])
+            ->tap(fn ($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
             ->paginate(5);
     }
 
-    // 💾 Create / Update
+    #[Computed]
+    public function libraryStats()
+    {
+        $libraries = Library::where('user_id', auth()->id())
+            ->withCount(['rooms', 'students', 'shifts'])
+            ->get();
+
+        return [
+            'libraries' => $libraries->count(),
+            'students' => $libraries->sum('students_count'),
+            'rooms' => $libraries->sum('rooms_count'),
+            'shifts' => $libraries->sum('shifts_count'),
+        ];
+    }
+
     public function save()
     {
         $this->validate([
@@ -72,17 +90,14 @@ new class extends Component {
             'ac_price' => 'required|numeric|min:0',
         ]);
 
-        // 📸 Upload image
         $imagePath = null;
         if ($this->profile_image) {
             $imagePath = $this->profile_image->store('libraries', 'public');
         }
 
         if ($this->editingId) {
-            // ✏️ UPDATE
-            $library = Library::findOrFail($this->editingId);
+            $library = Library::where('user_id', auth()->id())->findOrFail($this->editingId);
 
-            // if new image uploaded delete old one
             if ($imagePath && $library->profile_image) {
                 Storage::disk('public')->delete($library->profile_image);
             }
@@ -101,8 +116,7 @@ new class extends Component {
                 'ac_price' => $this->ac_price,
             ]);
         } else {
-            // ➕ CREATE
-            $library = Library::create([
+            Library::create([
                 'user_id' => auth()->id(),
                 'name' => $this->name,
                 'email' => $this->email,
@@ -122,13 +136,11 @@ new class extends Component {
         $this->resetForm();
     }
 
-    // ✏️ Edit
     public function edit($id)
     {
-        $library = Library::findOrFail($id);
+        $library = Library::where('user_id', auth()->id())->findOrFail($id);
 
         $this->editingId = $library->id;
-
         $this->name = $library->name;
         $this->email = $library->email;
         $this->phone = $library->phone;
@@ -139,57 +151,76 @@ new class extends Component {
         $this->google_map_link = $library->google_map_link;
         $this->normal_price = $library->normal_price;
         $this->ac_price = $library->ac_price;
+        $this->profile_image = null;
+        $this->resetErrorBag();
+        $this->resetValidation();
     }
 
-    // ❌ Delete
     public function delete($id)
     {
-        Library::findOrFail($id)->delete();
+        Library::where('user_id', auth()->id())->findOrFail($id)->delete();
 
         $this->dispatch('success', ['message' => 'Library deleted successfully!']);
     }
 
-    // 🔄 Reset form
     public function resetForm()
     {
-        $this->reset(['name', 'email', 'phone', 'whatsapp', 'state', 'city', 'address', 'google_map_link', 'profile_image', 'editingId']);
+        $this->reset([
+            'name',
+            'email',
+            'phone',
+            'whatsapp',
+            'state',
+            'city',
+            'address',
+            'google_map_link',
+            'profile_image',
+            'normal_price',
+            'ac_price',
+            'editingId',
+        ]);
+
+        $this->normal_price = 0;
+        $this->ac_price = 0;
+        $this->resetErrorBag();
+        $this->resetValidation();
     }
 
-    // shift
-    // 🔥 Open shift modal
     public function openShiftModal($libraryId)
     {
+        Library::where('user_id', auth()->id())->findOrFail($libraryId);
+
         $this->shiftLibraryId = $libraryId;
+        $this->shift_count = 1;
         $this->loadShifts();
     }
 
-    // 🔥 Load existing shifts
     public function loadShifts()
     {
         $this->shifts = Shift::where('library_id', $this->shiftLibraryId)
             ->get()
-            ->map(
-                fn($s) => [
-                    'name' => $s->name,
-                    'start_time' => $s->start_time,
-                    'end_time' => $s->end_time,
-                ],
-            )
+            ->map(fn ($shift) => [
+                'name' => $shift->name,
+                'start_time' => $shift->start_time,
+                'end_time' => $shift->end_time,
+            ])
             ->toArray();
     }
 
-    // 🔥 Generate shifts
     public function generateShifts()
     {
-        $library = Library::find($this->shiftLibraryId);
+        $library = Library::where('user_id', auth()->id())->find($this->shiftLibraryId);
         if (!$library) {
             return;
         }
 
-        $count = min($this->shift_count, 3);
+        $count = min((int) $this->shift_count, 3);
+        $open = strtotime((string) $library->open_time);
+        $close = strtotime((string) $library->close_time);
 
-        $open = strtotime($library->open_time);
-        $close = strtotime($library->close_time);
+        if ($count < 1 || $close <= $open) {
+            return;
+        }
 
         $total = $close - $open;
         $perShift = $total / $count;
@@ -198,24 +229,24 @@ new class extends Component {
 
         for ($i = 0; $i < $count; $i++) {
             $start = $open + $i * $perShift;
-            $end = $i == $count - 1 ? $close : $start + $perShift;
+            $end = $i === $count - 1 ? $close : $start + $perShift;
 
             $this->shifts[] = [
                 'name' => 'Shift ' . ($i + 1),
-                'start_time' => date('H:i', $start),
-                'end_time' => date('H:i', $end),
+                'start_time' => date('H:i', (int) $start),
+                'end_time' => date('H:i', (int) $end),
             ];
         }
     }
 
-    // 🔥 Save shifts
     public function saveShifts()
     {
         if (!$this->shiftLibraryId) {
             return;
         }
 
-        // delete old shifts
+        Library::where('user_id', auth()->id())->findOrFail($this->shiftLibraryId);
+
         Shift::where('library_id', $this->shiftLibraryId)->delete();
 
         foreach ($this->shifts as $shift) {
@@ -232,77 +263,75 @@ new class extends Component {
 };
 ?>
 
-<!-- UI START -->
 <section>
     <div class="relative mb-6 w-full">
-
-        <div class="flex justify-between items-center">
+        <div class="flex items-center justify-between">
             <div>
                 <flux:heading size="xl" level="1">{{ __('Manage Libraries') }}</flux:heading>
-                <flux:subheading size="lg" class="mb-6">{{ __('Create and manage your libraries') }}
-                </flux:subheading>
+                <flux:subheading size="lg" class="mb-6">{{ __('Create and manage your libraries') }}</flux:subheading>
             </div>
+
             <flux:modal.trigger name="create-library-modal">
-                <flux:button x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-library-modal')">
+                <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-library-modal')">
                     {{ __('Create New Library') }}
                 </flux:button>
             </flux:modal.trigger>
         </div>
 
-
         <flux:separator variant="subtle" />
     </div>
 
-    <!-- LIST -->
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Libraries') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->libraryStats['libraries'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Total libraries under your account') }}</flux:text>
+        </div>
+
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Students') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->libraryStats['students'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Students assigned to your libraries') }}</flux:text>
+        </div>
+
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Rooms') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->libraryStats['rooms'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Rooms created so far') }}</flux:text>
+        </div>
+
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Shifts') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->libraryStats['shifts'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Shift plans configured') }}</flux:text>
+        </div>
+    </div>
+
     <div class="mt-10 space-y-4">
-
         <flux:table :paginate="$this->libraries">
-
-            <!-- Columns -->
             <flux:table.columns>
-
-
-                <flux:table.column>
-                    Library
+                <flux:table.column>{{ __('Library') }}</flux:table.column>
+                <flux:table.column>{{ __('Contacts') }}</flux:table.column>
+                <flux:table.column>{{ __('Pricing') }}</flux:table.column>
+                <flux:table.column>{{ __('Setup') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sortBy === 'created_at'" :direction="$sortDirection" wire:click="sort('created_at')">
+                    {{ __('Created') }}
                 </flux:table.column>
-
-                <flux:table.column>
-                    Contacts
-                </flux:table.column>
-                <flux:table.column sortable :sorted="$sortBy === 'created_at'" :direction="$sortDirection"
-                    wire:click="sort('created_at')">
-                    Created
-                </flux:table.column>
-
-
-                <flux:table.column align="end">
-                    Actions
-                </flux:table.column>
-
+                <flux:table.column align="end">{{ __('Actions') }}</flux:table.column>
             </flux:table.columns>
 
-            <!-- Rows -->
             <flux:table.rows>
-
                 @foreach ($this->libraries as $library)
                     <flux:table.row :key="$library->id">
-
-                        <!-- Library -->
                         <flux:table.cell class="flex items-center gap-3">
                             <flux:avatar size="xs" src="{{ $library->profile_image_url }}" />
 
                             <div>
-                                <div class="font-semibold">
-                                    {{ $library->name }}
-                                </div>
-                                <div class="text-xs text-gray-500">
-                                    {{ $library->city ?? '' }}
-                                </div>
+                                <div class="font-semibold">{{ $library->name }}</div>
+                                <div class="text-xs text-gray-500">{{ $library->city ?? '' }}</div>
                             </div>
-
                         </flux:table.cell>
 
-                        <!-- Contacts -->
                         <flux:table.cell>
                             <div class="space-y-1">
                                 @if ($library->email)
@@ -326,93 +355,151 @@ new class extends Component {
                             </div>
                         </flux:table.cell>
 
-                        <!-- Created -->
+                        <flux:table.cell>
+                            <div class="space-y-2">
+                                <div class="flex items-center gap-2 text-sm">
+                                    <flux:badge color="zinc">Normal</flux:badge>
+                                    <span>INR {{ number_format((float) $library->normal_price, 2) }}</span>
+                                </div>
+                                <div class="flex items-center gap-2 text-sm">
+                                    <flux:badge color="sky">AC</flux:badge>
+                                    <span>INR {{ number_format((float) $library->ac_price, 2) }}</span>
+                                </div>
+                            </div>
+                        </flux:table.cell>
+
+                        <flux:table.cell>
+                            <div class="space-y-1 text-sm">
+                                <div>{{ $library->rooms_count }} {{ __('rooms') }}</div>
+                                <div>{{ $library->students_count }} {{ __('students') }}</div>
+                                <div>{{ $library->shifts_count }} {{ __('shifts') }}</div>
+                            </div>
+                        </flux:table.cell>
+
                         <flux:table.cell class="whitespace-nowrap">
                             {{ $library->created_at->format('d M Y') }}
                         </flux:table.cell>
 
-
-                        <!-- Actions -->
                         <flux:table.cell align="end">
-                            <div class="flex gap-2 justify-end">
-
+                            <div class="flex justify-end gap-2">
                                 <flux:modal.trigger name="shift-modal">
-                                    <flux:button size="sm" variant="outline"
-                                        wire:click="openShiftModal('{{ $library->id }}')">
-                                        Shifts
+                                    <flux:button size="sm" variant="outline" wire:click="openShiftModal('{{ $library->id }}')">
+                                        {{ __('Shifts') }}
                                     </flux:button>
                                 </flux:modal.trigger>
 
                                 <flux:modal.trigger name="create-library-modal">
                                     <flux:button size="sm" wire:click="edit('{{ $library->id }}')">
-                                        Edit
+                                        {{ __('Edit') }}
                                     </flux:button>
                                 </flux:modal.trigger>
 
-                                <flux:button size="sm" variant="danger"
+                                <flux:button
+                                    size="sm"
+                                    variant="danger"
                                     wire:confirm="Are you sure you want to delete this library? This action cannot be undone."
-                                    wire:click="delete('{{ $library->id }}')">
-                                    Delete
+                                    wire:click="delete('{{ $library->id }}')"
+                                >
+                                    {{ __('Delete') }}
                                 </flux:button>
-
                             </div>
                         </flux:table.cell>
-
                     </flux:table.row>
                 @endforeach
-
             </flux:table.rows>
-
         </flux:table>
     </div>
 
     <flux:modal name="create-library-modal" focusable class="w-full max-w-2xl">
         <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
-            <!-- FORM -->
+            <div>
+                <flux:heading size="lg">{{ $editingId ? __('Update Library') : __('Create New Library') }}</flux:heading>
+                <flux:text class="mt-1 text-sm text-zinc-500">
+                    {{ __('Add the main library details here. Rooms, students, and shifts can be managed right after this.') }}
+                </flux:text>
+            </div>
+
             <form wire:submit="save" class="space-y-4">
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input wire:model="name" label="Library Name" required />
+                    <flux:input type="email" wire:model="email" label="Email" />
+                </div>
 
-                <flux:input wire:model="name" label="Library Name" required />
-
-                <flux:input type="email" wire:model="email" label="Email" />
-
-                <flux:input type="tel" wire:model="phone" label="Phone" />
-
-                <flux:input type="tel" wire:model="whatsapp" label="WhatsApp" />
-
-                <flux:input wire:model="state" label="State" />
-
-                <flux:input wire:model="city" label="City" />
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input type="tel" wire:model="phone" label="Phone" />
+                    <flux:input type="tel" wire:model="whatsapp" label="WhatsApp" />
+                </div>
 
                 <flux:textarea wire:model="address" label="Address" />
 
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input wire:model="state" label="State" />
+                    <flux:input wire:model="city" label="City" />
+                </div>
+
                 <flux:input type="url" wire:model="google_map_link" label="Google Map Link (optional)" />
 
-                <input type="file" wire:model="profile_image" />
-                @if ($profile_image)
-                    <img src="{{ $profile_image->temporaryUrl() }}" class="w-20 h-20 rounded">
-                @endif
+                <div class="rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
+                    <div class="flex items-start justify-between gap-4">
+                        <div>
+                            <flux:heading size="sm">{{ __('Library Photo') }}</flux:heading>
+                            <flux:text class="mt-1 text-sm text-zinc-500">
+                                {{ __('Upload a clear cover image for the library profile.') }}
+                            </flux:text>
+                        </div>
 
-                <flux:input class="col-6" type="number" wire:model="normal_price" label="Normal Seat Price (₹)"
-                    required />
-                <flux:input class="col-6" type="number" wire:model="ac_price" label="AC Seat Price (₹)" required />
+                        @if ($profile_image)
+                            <img src="{{ $profile_image->temporaryUrl() }}" class="h-20 w-20 rounded-xl object-cover">
+                        @endif
+                    </div>
 
-                <flux:button type="submit">
-                    {{ $editingId ? 'Update Library' : 'Create Library' }}
-                </flux:button>
+                    <div class="mt-4">
+                        <input type="file" wire:model="profile_image" />
+                    </div>
+                </div>
 
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input type="number" step="0.01" min="0" wire:model="normal_price" label="Normal Seat Price (INR)" required />
+                    <flux:input type="number" step="0.01" min="0" wire:model="ac_price" label="AC Seat Price (INR)" required />
+                </div>
+
+                <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
+                    <flux:text class="text-sm text-zinc-500">{{ __('Pricing Preview') }}</flux:text>
+                    <div class="mt-3 grid gap-3 md:grid-cols-2">
+                        <div>
+                            <flux:text class="text-sm">{{ __('Normal') }}</flux:text>
+                            <flux:heading size="sm">INR {{ number_format((float) $normal_price, 2) }}</flux:heading>
+                        </div>
+                        <div>
+                            <flux:text class="text-sm">{{ __('AC') }}</flux:text>
+                            <flux:heading size="sm">INR {{ number_format((float) $ac_price, 2) }}</flux:heading>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <flux:button type="button" variant="ghost" wire:click="resetForm">
+                        {{ __('Reset') }}
+                    </flux:button>
+
+                    <flux:button type="submit">
+                        {{ $editingId ? __('Update Library') : __('Create Library') }}
+                    </flux:button>
+                </div>
             </form>
         </div>
     </flux:modal>
 
     <flux:modal name="shift-modal" class="w-full max-w-3xl">
-
         <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Shift Management') }}</flux:heading>
+                <flux:text class="mt-1 text-sm text-zinc-500">
+                    {{ __('Generate and save shift blocks for the selected library.') }}
+                </flux:text>
+            </div>
 
-            <flux:heading size="lg">Shift Management</flux:heading>
-
-            <!-- Controls -->
             <div class="grid grid-cols-3 gap-4">
-
                 <flux:select wire:model="shift_count" label="Number of Shifts">
                     <option value="1">1 Shift</option>
                     <option value="2">2 Shifts</option>
@@ -420,57 +507,37 @@ new class extends Component {
                 </flux:select>
 
                 <div class="flex items-end">
-                    <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted"
-                        wire:click="generateShifts">
-                        Generate
+                    <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted" wire:click="generateShifts">
+                        {{ __('Generate') }}
                     </flux:button>
                 </div>
-
             </div>
 
-            <!-- Shift Table -->
             @if (count($shifts))
-
                 <flux:table>
-
                     <flux:table.columns>
-                        <flux:table.column>Shift</flux:table.column>
-                        <flux:table.column>Start</flux:table.column>
-                        <flux:table.column>End</flux:table.column>
+                        <flux:table.column>{{ __('Shift') }}</flux:table.column>
+                        <flux:table.column>{{ __('Start') }}</flux:table.column>
+                        <flux:table.column>{{ __('End') }}</flux:table.column>
                     </flux:table.columns>
 
                     <flux:table.rows>
-
-                        @foreach ($shifts as $i => $shift)
-                            <flux:table.row>
-
-                                <flux:table.cell>
-                                    {{ $shift['name'] }}
-                                </flux:table.cell>
-
-                                <flux:table.cell>
-                                    {{ $shift['start_time'] }}
-                                </flux:table.cell>
-
-                                <flux:table.cell>
-                                    {{ $shift['end_time'] }}
-                                </flux:table.cell>
+                        @foreach ($shifts as $index => $shift)
+                            <flux:table.row :key="$index">
+                                <flux:table.cell>{{ $shift['name'] }}</flux:table.cell>
+                                <flux:table.cell>{{ $shift['start_time'] }}</flux:table.cell>
+                                <flux:table.cell>{{ $shift['end_time'] }}</flux:table.cell>
                             </flux:table.row>
                         @endforeach
-
                     </flux:table.rows>
-
                 </flux:table>
 
                 <div class="flex justify-end">
                     <flux:button variant="filled" wire:click="saveShifts">
-                        Save Shifts
+                        {{ __('Save Shifts') }}
                     </flux:button>
                 </div>
-
             @endif
-
         </div>
-
     </flux:modal>
 </section>
