@@ -30,10 +30,12 @@ new class extends Component {
 
     public function loadMemberships()
     {
-        $this->memberships = Membership::with(['student', 'seat.room', 'library'])
+        $this->memberships = Membership::with(['user', 'seat.room', 'library'])
             ->whereIn('library_id', auth()->user()->libraries->pluck('id'))
             ->latest()
             ->get();
+
+        // dd($this->memberships);
     }
 
     public function updatedLibraryId()
@@ -247,7 +249,7 @@ new class extends Component {
             @foreach ($memberships as $m)
                 <flux:table.row>
 
-                    <flux:table.cell>{{ $m->student->name }}</flux:table.cell>
+                    <flux:table.cell>{{ $m->user->name }}</flux:table.cell>
 
                     <flux:table.cell>
                         {{ $m->seat->seat_number }} ({{ $m->seat->room->type }})

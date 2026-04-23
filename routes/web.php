@@ -13,6 +13,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('library/create', 'pages::library.create')->name('library.create');
         Route::livewire('room/manage', 'library::room.manage')->name('room.manage');
         Route::livewire('student/manage', 'library::student.manage')->name('student.manage');
+        Route::livewire('student/create', 'library::student.create')->name('student.create');
         Route::livewire('/membership/manage/{library}', 'library::membership.manage')
             ->name('membership.manage');
     });

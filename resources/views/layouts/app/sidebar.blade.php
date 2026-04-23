@@ -21,6 +21,9 @@
                   <flux:sidebar.item icon="folder" :href="route('room.manage')" :current="request()->routeIs('room.manage')" wire:navigate>
                       {{ __('Manage Rooms') }}
                   </flux:sidebar.item>
+                   <flux:sidebar.item icon="user" :href="route('student.create')" :current="request()->routeIs('student.create')" wire:navigate>
+                      {{ __('Add Students') }}
+                  </flux:sidebar.item>
                    <flux:sidebar.item icon="user" :href="route('student.manage')" :current="request()->routeIs('student.manage')" wire:navigate>
                       {{ __('Manage Students') }}
                   </flux:sidebar.item>
