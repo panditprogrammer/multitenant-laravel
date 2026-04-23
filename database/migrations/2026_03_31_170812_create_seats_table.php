@@ -14,7 +14,6 @@ return new class extends Migration
             // 🔗 Relation to Room
             $table->foreignId('room_id')->constrained()->cascadeOnDelete();
             $table->string('seat_number'); // A1, B2
-            $table->enum('type', ['NORMAL', 'AC'])->default('NORMAL');
             $table->boolean('is_active')->default(true);
             $table->timestamps();
             // 🔥 IMPORTANT: Prevent duplicate seats in same room

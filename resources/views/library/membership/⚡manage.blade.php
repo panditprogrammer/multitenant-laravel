@@ -116,7 +116,7 @@ new class extends Component {
             'library_id' => 'required|exists:libraries,id',
             'user_id' => 'required|exists:users,id',
             'seat_id' => 'required|exists:seats,id',
-            'start_date' => 'required|date',
+            'start_date' => 'required|date|after_or_equal:today',
         ]);
 
         if (empty($this->shift_ids)) {

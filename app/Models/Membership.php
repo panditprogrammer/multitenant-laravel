@@ -6,29 +6,33 @@ use Illuminate\Database\Eloquent\Model;
 
 class Membership extends Model
 {
-
     protected $fillable = [
-        'user_id',
         'library_id',
+        'user_id',
         'seat_id',
+        'shift_ids',
         'start_date',
         'end_date',
-        'plan_type',
         'amount',
+        'status',
     ];
-
 
     // cast value to appropriate data type 
     protected $casts = [
+        'shift_ids' => 'array',
         'start_date' => 'date',
         'end_date' => 'date',
         'amount' => 'decimal:2',
     ];
 
-    public function student()
+
+    // 🔗 Relationships
+
+    public function user()
     {
-        return $this->belongsTo(User::class, 'user_id');
+        return $this->belongsTo(User::class);
     }
+
 
     public function seat()
     {
@@ -41,7 +45,7 @@ class Membership extends Model
     }
 
     public function shifts()
-{
-    return $this->belongsToMany(Shift::class, 'membership_shift');
-}
+    {
+        return $this->belongsToMany(Shift::class, 'membership_shift');
+    }
 }
