@@ -1,12 +1,19 @@
 <?php
 
+use App\Models\Membership;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
 
-    Route::view('dashboard', 'dashboard')->name('dashboard');
+    Route::get('dashboard', function () {
+        if (auth()->user()->role === 'student') {
+            return redirect()->route('student.dashboard');
+        }
+
+        return view('dashboard');
+    })->name('dashboard');
 
     // owner routes
     Route::middleware(['auth', 'role:owner'])->group(function () {
@@ -19,10 +26,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     // student routes
-    Route::middleware(['auth', 'role:student'])->group(function () {
-        Route::get('student', function () {
-            return 'student';
-        })->name('student');
+    Route::middleware(['auth', 'role:student'])->prefix("student")->name("student.")->group(function () {
+        Route::livewire('dashboard', 'pages::student.dashboard')->name('dashboard');
     });
 });
 

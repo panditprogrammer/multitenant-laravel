@@ -12,24 +12,29 @@
 
             <flux:sidebar.nav>
                 <flux:sidebar.group :heading="__('Platform')" class="grid">
-                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard')" wire:navigate>
+                    <flux:sidebar.item icon="home" :href="route('dashboard')" :current="request()->routeIs('dashboard', 'student.dashboard')" wire:navigate>
                         {{ __('Dashboard') }}
                     </flux:sidebar.item>
-                    <flux:sidebar.item icon="folder" :href="route('library.create')" :current="request()->routeIs('library.create')" wire:navigate>
-                      {{ __('Create Library') }}
-                  </flux:sidebar.item>
-                  <flux:sidebar.item icon="folder" :href="route('room.manage')" :current="request()->routeIs('room.manage')" wire:navigate>
-                      {{ __('Manage Rooms') }}
-                  </flux:sidebar.item>
-                   <flux:sidebar.item icon="user" :href="route('student.create')" :current="request()->routeIs('student.create')" wire:navigate>
-                      {{ __('Add Students') }}
-                  </flux:sidebar.item>
-                   <flux:sidebar.item icon="user" :href="route('student.manage')" :current="request()->routeIs('student.manage')" wire:navigate>
-                      {{ __('Manage Students') }}
-                  </flux:sidebar.item>
-                   <flux:sidebar.item icon="user" :href="route('membership.manage', 0)" :current="request()->routeIs('membership.manage')" wire:navigate>
-                      {{ __('Manage Memberships') }}
-                  </flux:sidebar.item>
+                    @if (auth()->user()->role === 'owner')
+                        <flux:sidebar.item icon="folder" :href="route('library.create')" :current="request()->routeIs('library.create')" wire:navigate>
+                            {{ __('Create Library') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="folder" :href="route('room.manage')" :current="request()->routeIs('room.manage')" wire:navigate>
+                            {{ __('Manage Rooms') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="user" :href="route('student.manage')" :current="request()->routeIs('student.manage')" wire:navigate>
+                            {{ __('Manage Students') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="user" :href="route('membership.manage', 0)" :current="request()->routeIs('membership.manage')" wire:navigate>
+                            {{ __('Manage Memberships') }}
+                        </flux:sidebar.item>
+                    @endif
+
+                    @if (auth()->user()->role === 'student')
+                        <flux:sidebar.item icon="user" :href="route('student.dashboard')" :current="request()->routeIs('student.dashboard')" wire:navigate>
+                            {{ __('My Dashboard') }}
+                        </flux:sidebar.item>
+                    @endif
                 </flux:sidebar.group>
             </flux:sidebar.nav>
 
