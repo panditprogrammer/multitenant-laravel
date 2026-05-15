@@ -15,6 +15,8 @@ class Membership extends Model
         'end_date',
         'amount',
         'status',
+        'payment_method',
+        'paid_at',
     ];
 
     // cast value to appropriate data type 
@@ -23,6 +25,7 @@ class Membership extends Model
         'start_date' => 'date',
         'end_date' => 'date',
         'amount' => 'decimal:2',
+        'paid_at' => 'datetime',
     ];
 
 

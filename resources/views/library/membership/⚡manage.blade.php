@@ -1,292 +1,448 @@
 <?php
 
-use Livewire\Component;
-use App\Models\User;
-use App\Models\Seat;
-use App\Models\Membership;
 use App\Models\Library;
-use Illuminate\Support\Facades\Auth;
+use App\Models\Membership;
 use Carbon\Carbon;
+use Livewire\Attributes\Computed;
+use Livewire\Component;
+use Livewire\WithPagination;
 
 new class extends Component {
-    public $library_id, $user_id, $seat_id;
-    public $start_date;
+    use WithPagination;
+
+    protected $paginationTheme = 'tailwind';
+
+    public $filter_library_id = '';
+    public $filter_status = '';
+    public $filter_payment = '';
+
+    public $editingMembershipId = null;
+    public $start_date = '';
+    public $end_date = '';
     public $amount = 0;
+    public $status = 'active';
+    public $mark_cash_paid = false;
+    public $paid_at = '';
 
-    public $shift_ids = [];
+    public $sortBy = 'start_date';
+    public $sortDirection = 'desc';
 
-    public $library = null;
-
-    public $libraries = [];
-    public $students = [];
-    public $seats = [];
-    public $memberships = [];
-
-    public function mount()
+    public function mount($library = null)
     {
-        $this->libraries = Auth::user()->libraries;
-        $this->loadMemberships();
+        if ($library && (string) $library !== '0') {
+            $libraryId = (string) $library;
+
+            if ($this->libraries->pluck('id')->map(fn ($id) => (string) $id)->contains($libraryId)) {
+                $this->filter_library_id = $libraryId;
+            }
+        }
     }
 
-    public function loadMemberships()
+    public function sort($column)
     {
-        $this->memberships = Membership::with(['user', 'seat.room', 'library'])
-            ->whereIn('library_id', auth()->user()->libraries->pluck('id'))
-            ->latest()
+        if ($this->sortBy === $column) {
+            $this->sortDirection = $this->sortDirection === 'asc' ? 'desc' : 'asc';
+        } else {
+            $this->sortBy = $column;
+            $this->sortDirection = 'asc';
+        }
+
+        $this->resetPage();
+    }
+
+    #[Computed]
+    public function libraries()
+    {
+        return Library::where('user_id', auth()->id())
+            ->withCount(['students', 'rooms', 'shifts'])
+            ->orderBy('name')
+            ->get();
+    }
+
+    #[Computed]
+    public function memberships()
+    {
+        return Membership::query()
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->with(['user', 'seat.room', 'library', 'shifts'])
+            ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
+            ->when($this->filter_status, fn ($query) => $query->where('status', $this->filter_status))
+            ->when($this->filter_payment, function ($query) {
+                if ($this->filter_payment === 'paid') {
+                    $query->whereNotNull('paid_at');
+                }
+
+                if ($this->filter_payment === 'pending') {
+                    $query->whereNull('paid_at');
+                }
+            })
+            ->tap(function ($query) {
+                if ($this->sortBy === 'library') {
+                    $query->join('libraries', 'libraries.id', '=', 'memberships.library_id')
+                        ->orderBy('libraries.name', $this->sortDirection)
+                        ->select('memberships.*');
+
+                    return;
+                }
+
+                if ($this->sortBy === 'student') {
+                    $query->join('users', 'users.id', '=', 'memberships.user_id')
+                        ->orderBy('users.name', $this->sortDirection)
+                        ->select('memberships.*');
+
+                    return;
+                }
+
+                $query->orderBy($this->sortBy, $this->sortDirection);
+            })
+            ->paginate(10);
+    }
+
+    #[Computed]
+    public function membershipStats()
+    {
+        $memberships = Membership::query()
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
             ->get();
 
-        // dd($this->memberships);
+        return [
+            'active' => $memberships->filter(fn ($membership) => $membership->status === 'active' && $membership->end_date && !$membership->end_date->isPast())->count(),
+            'expiring' => $memberships->filter(fn ($membership) => $membership->status === 'active' && $membership->end_date && !$membership->end_date->isPast() && now()->diffInDays($membership->end_date, false) <= 3)->count(),
+            'cash_paid' => $memberships->where('payment_method', 'cash')->whereNotNull('paid_at')->count(),
+            'pending_payment' => $memberships->whereNull('paid_at')->count(),
+        ];
     }
 
-    public function updatedLibraryId()
+    public function updatedFilterLibraryId()
     {
-        $this->students = User::where('role', 'student')->where('library_id', $this->library_id)->get();
-
-        $this->seats = Seat::with('room')->whereHas('room', fn($q) => $q->where('library_id', $this->library_id))->get();
-
-        $this->library = Library::findOrFail($this->library_id);
-        $this->resetFormState();
+        $this->resetPage();
     }
 
-    public function updated($field)
+    public function updatedFilterStatus()
     {
-        if (in_array($field, ['seat_id', 'shift_ids'])) {
-            $this->resetErrorBag();
-            $this->calculateAmount();
-        }
+        $this->resetPage();
     }
 
-    // 🔥 PRICING
-    public function calculateAmount()
+    public function updatedFilterPayment()
     {
-        $library = Library::find($this->library_id);
-        $seat = Seat::with('room')->find($this->seat_id);
-
-        if (!$library || !$seat) {
-            $this->amount = 0;
-            return;
-        }
-
-        $room = $seat->room;
-
-        $rate = $room->type === 'AC' ? $library->ac_price : $library->normal_price;
-
-        if ($rate === null) {
-            $this->addError('seat_id', 'Pricing not configured');
-            return;
-        }
-
-        $this->amount = $rate * max(count($this->shift_ids), 1);
+        $this->resetPage();
     }
 
-    // 🔥 DATE RANGE (MONTHLY)
-    private function getEndDate()
+    public function edit($id)
     {
-        return Carbon::parse($this->start_date)->addMonth()->subDay();
+        $membership = Membership::query()
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->with(['user', 'seat.room', 'library', 'shifts'])
+            ->findOrFail($id);
+
+        $this->editingMembershipId = $membership->id;
+        $this->start_date = $membership->start_date?->format('Y-m-d') ?? '';
+        $this->end_date = $membership->end_date?->format('Y-m-d') ?? '';
+        $this->amount = (float) $membership->amount;
+        $this->status = $membership->status;
+        $this->mark_cash_paid = (bool) ($membership->payment_method === 'cash' && $membership->paid_at);
+        $this->paid_at = $membership->paid_at?->format('Y-m-d\TH:i') ?? '';
+        $this->resetErrorBag();
+        $this->resetValidation();
     }
 
-    // 🔥 CONFLICT CHECK
-    private function hasSeatConflict($endDate)
-    {
-        return Membership::where('seat_id', $this->seat_id)
-            ->where('library_id', $this->library_id)
-            ->where(function ($q) use ($endDate) {
-                $q->where('start_date', '<=', $endDate)->where('end_date', '>=', $this->start_date);
-            })
-            ->where(function ($shiftQuery) {
-                $shiftQuery->whereHas('shifts', function ($sq) {
-                    $sq->whereIn('shifts.id', $this->shift_ids);
-                })->orWhere(function ($legacyQuery) {
-                    foreach ($this->shift_ids as $shiftId) {
-                        $legacyQuery->orWhereJsonContains('shift_ids', $shiftId);
-                    }
-                });
-            })
-            ->exists();
-    }
-
-    private function hasStudentConflict($endDate)
-    {
-        return Membership::where('user_id', $this->user_id)
-            ->where('library_id', $this->library_id)
-            ->where(function ($q) use ($endDate) {
-                $q->where('start_date', '<=', $endDate)->where('end_date', '>=', $this->start_date);
-            })
-            ->where(function ($shiftQuery) {
-                $shiftQuery->whereHas('shifts', function ($sq) {
-                    $sq->whereIn('shifts.id', $this->shift_ids);
-                })->orWhere(function ($legacyQuery) {
-                    foreach ($this->shift_ids as $shiftId) {
-                        $legacyQuery->orWhereJsonContains('shift_ids', $shiftId);
-                    }
-                });
-            })
-            ->exists();
-    }
-
-    public function save()
+    public function saveMembership()
     {
         $this->validate([
-            'library_id' => 'required|exists:libraries,id',
-            'user_id' => 'required|exists:users,id',
-            'seat_id' => 'required|exists:seats,id',
-            'start_date' => 'required|date|after_or_equal:today',
+            'start_date' => 'required|date',
+            'end_date' => 'required|date|after_or_equal:start_date',
+            'amount' => 'required|numeric|min:0',
+            'status' => 'required|in:active,expired,cancelled',
+            'paid_at' => $this->mark_cash_paid ? 'nullable|date' : 'nullable',
         ]);
 
-        if (empty($this->shift_ids)) {
-            $this->addError('shift_ids', 'Select shifts');
-            return;
-        }
+        $membership = Membership::query()
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->findOrFail($this->editingMembershipId);
 
-        if (count($this->shift_ids) > 3) {
-            $this->addError('shift_ids', 'Max 3 shifts allowed');
-            return;
-        }
-
-        // 🔐 security
-        if (!auth()->user()->libraries->pluck('id')->contains($this->library_id)) {
-            abort(403);
-        }
-
-        $this->calculateAmount();
-
-        $endDate = $this->getEndDate();
-
-        if ($this->hasSeatConflict($endDate)) {
-            $this->addError('seat_id', 'Seat already booked');
-            return;
-        }
-
-        if ($this->hasStudentConflict($endDate)) {
-            $this->addError('user_id', 'Student already booked');
-            return;
-        }
-
-        $membership = Membership::create([
-            'user_id' => $this->user_id,
-            'seat_id' => $this->seat_id,
-            'library_id' => $this->library_id,
-            'shift_ids' => $this->shift_ids,
+        $membership->update([
             'start_date' => $this->start_date,
-            'end_date' => $endDate,
+            'end_date' => $this->end_date,
             'amount' => $this->amount,
+            'status' => $this->status,
+            'payment_method' => $this->mark_cash_paid ? 'cash' : null,
+            'paid_at' => $this->mark_cash_paid
+                ? ($this->paid_at ? Carbon::parse($this->paid_at) : now())
+                : null,
         ]);
 
-        $membership->shifts()->sync($this->shift_ids);
-
-        $this->resetFormState();
-        $this->loadMemberships();
-
-        $this->dispatch('success', ['message' => 'Membership created']);
+        $this->dispatch('success', ['message' => $this->mark_cash_paid ? 'Membership updated and cash payment collected!' : 'Membership updated successfully!']);
+        $this->resetMembershipForm();
     }
 
-    private function resetFormState()
+    public function resetMembershipForm()
     {
-        $this->reset(['user_id', 'seat_id', 'start_date', 'shift_ids', 'amount']);
+        $this->reset([
+            'editingMembershipId',
+            'start_date',
+            'end_date',
+            'amount',
+            'status',
+            'mark_cash_paid',
+            'paid_at',
+        ]);
+
+        $this->amount = 0;
+        $this->status = 'active';
+        $this->mark_cash_paid = false;
+        $this->resetErrorBag();
+        $this->resetValidation();
     }
 };
 ?>
 
+<section class="space-y-8">
+    <div class="relative mb-6 w-full">
+        <div class="flex items-center justify-between">
+            <div>
+                <flux:heading size="xl" level="1">{{ __('Manage Memberships') }}</flux:heading>
+                <flux:subheading size="lg" class="mb-6">{{ __('Track active plans, update dates, and collect owner-side cash payments') }}</flux:subheading>
+            </div>
+        </div>
 
-<section class="space-y-6">
+        <flux:separator variant="subtle" />
+    </div>
 
-    <flux:heading size="lg">Membership</flux:heading>
+    <div class="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Active Memberships') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->membershipStats['active'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Memberships currently running') }}</flux:text>
+        </div>
 
-    <form wire:submit="save" class="grid md:grid-cols-4 gap-3">
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Expiring Soon') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->membershipStats['expiring'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Plans ending within the next 3 days') }}</flux:text>
+        </div>
 
-        <flux:select wire:model.live="library_id" label="Library">
-            <option value="">Select</option>
-            @foreach ($libraries as $lib)
-                <option value="{{ $lib->id }}">{{ $lib->name }}</option>
-            @endforeach
-        </flux:select>
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Cash Collected') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->membershipStats['cash_paid'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Memberships already marked as paid by cash') }}</flux:text>
+        </div>
 
-        <flux:select wire:model="user_id" label="Student">
-            <option value="">Select</option>
-            @foreach ($students as $s)
-                <option value="{{ $s->id }}">{{ $s->name }}</option>
-            @endforeach
-        </flux:select>
+        <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
+            <flux:text class="text-sm text-zinc-500">{{ __('Pending Payment') }}</flux:text>
+            <flux:heading size="lg" class="mt-2">{{ $this->membershipStats['pending_payment'] }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Memberships still waiting for payment collection') }}</flux:text>
+        </div>
+    </div>
 
-        <flux:select wire:model.live="seat_id" label="Seat">
-            <option value="">Select</option>
-            @foreach ($seats as $seat)
-                <option value="{{ $seat->id }}">
-                    {{ $seat->seat_number }} ({{ $seat->room->type }})
-                </option>
-            @endforeach
-        </flux:select>
+    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+        <div>
+            <flux:heading size="lg">{{ __('Filters') }}</flux:heading>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Filter memberships by library, status, and payment state.') }}</flux:text>
+        </div>
 
-        <flux:input type="date" wire:model="start_date" label="Start Date" />
-
-        @if ($start_date)
-            <flux:badge color="blue">
-                Valid Till: {{ \Carbon\Carbon::parse($start_date)->addMonth()->subDay()->format('d M Y') }}
-            </flux:badge>
-        @endif
-
-        @if ($library)
-            <flux:select multiple wire:model="shift_ids" label="Select Shifts">
-                @foreach ($library->shifts as $shift)
-                    <option value="{{ $shift->id }}">
-                        {{ $shift->name }} ({{ $shift->start_time }} - {{ $shift->end_time }})
-                    </option>
+        <div class="mt-6 grid gap-4 md:grid-cols-3">
+            <flux:select wire:model.live="filter_library_id" label="Library">
+                <flux:select.option value="">{{ __('All Libraries') }}</flux:select.option>
+                @foreach ($this->libraries as $library)
+                    <flux:select.option value="{{ $library->id }}">{{ $library->name }}</flux:select.option>
                 @endforeach
             </flux:select>
-        @endif
 
-        @if ($amount)
-            <flux:badge color="green">₹{{ $amount }}</flux:badge>
-        @endif
+            <flux:select wire:model.live="filter_status" label="Status">
+                <flux:select.option value="">{{ __('All Statuses') }}</flux:select.option>
+                <flux:select.option value="active">{{ __('Active') }}</flux:select.option>
+                <flux:select.option value="expired">{{ __('Expired') }}</flux:select.option>
+                <flux:select.option value="cancelled">{{ __('Cancelled') }}</flux:select.option>
+            </flux:select>
 
-        <flux:button type="submit">Save</flux:button>
+            <flux:select wire:model.live="filter_payment" label="Payment">
+                <flux:select.option value="">{{ __('All Payments') }}</flux:select.option>
+                <flux:select.option value="paid">{{ __('Cash Collected') }}</flux:select.option>
+                <flux:select.option value="pending">{{ __('Pending Payment') }}</flux:select.option>
+            </flux:select>
+        </div>
+    </div>
 
-    </form>
+    <div class="space-y-4">
+        <flux:table :paginate="$this->memberships">
+            <flux:table.columns>
+                <flux:table.column sortable :sorted="$sortBy === 'student'" :direction="$sortDirection" wire:click="sort('student')">
+                    {{ __('Student') }}
+                </flux:table.column>
+                <flux:table.column sortable :sorted="$sortBy === 'library'" :direction="$sortDirection" wire:click="sort('library')">
+                    {{ __('Library') }}
+                </flux:table.column>
+                <flux:table.column>{{ __('Seat & Shift') }}</flux:table.column>
+                <flux:table.column sortable :sorted="$sortBy === 'start_date'" :direction="$sortDirection" wire:click="sort('start_date')">
+                    {{ __('Dates') }}
+                </flux:table.column>
+                <flux:table.column>{{ __('Payment') }}</flux:table.column>
+                <flux:table.column align="end">{{ __('Actions') }}</flux:table.column>
+            </flux:table.columns>
 
-    <hr>
+            <flux:table.rows>
+                @forelse ($this->memberships as $membership)
+                    @php
+                        $isExpiring = $membership->status === 'active' && $membership->end_date && !$membership->end_date->isPast() && now()->diffInDays($membership->end_date, false) <= 3;
+                        $isPaid = (bool) $membership->paid_at;
+                    @endphp
+                    <flux:table.row :key="$membership->id">
+                        <flux:table.cell>
+                            <div class="flex items-center gap-3">
+                                <flux:avatar size="xs" src="{{ $membership->user?->profile_image_url }}" />
+                                <div>
+                                    <div class="font-semibold">{{ $membership->user?->name ?? '-' }}</div>
+                                    <div class="text-xs text-zinc-500">{{ $membership->user?->email ?? '-' }}</div>
+                                </div>
+                            </div>
+                        </flux:table.cell>
 
-    <flux:heading size="lg">Memberships</flux:heading>
+                        <flux:table.cell>
+                            <div class="space-y-1">
+                                <div class="font-medium">{{ $membership->library?->name ?? '-' }}</div>
+                                <div class="text-xs text-zinc-500">{{ $membership->library?->city ?? __('City not set') }}</div>
+                            </div>
+                        </flux:table.cell>
 
-    <flux:table>
+                        <flux:table.cell>
+                            <div class="space-y-2">
+                                <div class="font-medium">
+                                    {{ $membership->seat?->seat_number ?? '-' }}
+                                    @if ($membership->seat?->room)
+                                        <span class="text-xs text-zinc-500">{{ __('in') }} {{ $membership->seat->room->name }}</span>
+                                    @endif
+                                </div>
 
-        <flux:table.columns>
-            <flux:table.column>Student</flux:table.column>
-            <flux:table.column>Seat</flux:table.column>
-            <flux:table.column>Plan</flux:table.column>
-            <flux:table.column>Dates</flux:table.column>
-            <flux:table.column>Amount</flux:table.column>
-        </flux:table.columns>
+                                <div class="flex flex-wrap gap-1">
+                                    @forelse ($membership->shifts as $shift)
+                                        <flux:badge size="sm" color="zinc">{{ $shift->name }}</flux:badge>
+                                    @empty
+                                        <flux:text class="text-sm text-zinc-500">{{ __('No shifts linked') }}</flux:text>
+                                    @endforelse
+                                </div>
+                            </div>
+                        </flux:table.cell>
 
-        <flux:table.rows>
+                        <flux:table.cell>
+                            <div class="space-y-2">
+                                <div class="text-sm">
+                                    {{ $membership->start_date?->format('d M Y') ?? '-' }} - {{ $membership->end_date?->format('d M Y') ?? '-' }}
+                                </div>
 
-            @foreach ($memberships as $m)
-                <flux:table.row>
+                                <flux:badge :color="$isExpiring ? 'amber' : ($membership->status === 'active' ? 'green' : 'zinc')">
+                                    {{ $isExpiring ? __('Expiring') : ucfirst($membership->status) }}
+                                </flux:badge>
+                            </div>
+                        </flux:table.cell>
 
-                    <flux:table.cell>{{ $m->user->name }}</flux:table.cell>
+                        <flux:table.cell>
+                            <div class="space-y-2">
+                                <div class="font-semibold">INR {{ number_format((float) $membership->amount, 2) }}</div>
+                                <div class="flex flex-wrap gap-2">
+                                    <flux:badge :color="$isPaid ? 'green' : 'amber'">
+                                        {{ $isPaid ? __('Cash Paid') : __('Pending') }}
+                                    </flux:badge>
 
-                    <flux:table.cell>
-                        {{ $m->seat->seat_number }} ({{ $m->seat->room->type }})
-                    </flux:table.cell>
+                                    @if ($membership->paid_at)
+                                        <span class="text-xs text-zinc-500">{{ $membership->paid_at->format('d M Y h:i A') }}</span>
+                                    @endif
+                                </div>
+                            </div>
+                        </flux:table.cell>
 
-                    <flux:table.cell>
-                        @if ($m->shifts)
-                            @foreach ($m->shifts as $s)
-                                <div>{{ $s->name }}</div>
-                            @endforeach
-                        @endif
-                    </flux:table.cell>
+                        <flux:table.cell align="end">
+                            <flux:modal.trigger name="membership-manage-modal">
+                                <flux:button size="sm" wire:click="edit('{{ $membership->id }}')">
+                                    {{ __('Manage') }}
+                                </flux:button>
+                            </flux:modal.trigger>
+                        </flux:table.cell>
+                    </flux:table.row>
+                @empty
+                    <flux:table.row>
+                        <flux:table.cell colspan="6">
+                            <flux:text>{{ __('No memberships found for the current filters.') }}</flux:text>
+                        </flux:table.cell>
+                    </flux:table.row>
+                @endforelse
+            </flux:table.rows>
+        </flux:table>
+    </div>
 
-                    <flux:table.cell>
-                        {{ $m->start_date->format('d M') }} → {{ $m->end_date->format('d M') }}
-                    </flux:table.cell>
+    <flux:modal name="membership-manage-modal" focusable class="w-full max-w-2xl">
+        <div class="space-y-6">
+            <div>
+                <flux:heading size="lg">{{ __('Manage Membership') }}</flux:heading>
+                <flux:text class="mt-1 text-sm text-zinc-500">
+                    {{ __('Adjust the membership period and record cash collection from the owner side.') }}
+                </flux:text>
+            </div>
 
-                    <flux:table.cell>₹{{ $m->amount }}</flux:table.cell>
+            <form wire:submit="saveMembership" class="space-y-4">
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input type="date" wire:model="start_date" label="Start Date" required />
+                    <flux:input type="date" wire:model="end_date" label="End Date" required />
+                </div>
 
-                </flux:table.row>
-            @endforeach
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input type="number" step="0.01" min="0" wire:model="amount" label="Amount (INR)" required />
 
-        </flux:table.rows>
+                    <flux:select wire:model="status" label="Status">
+                        <flux:select.option value="active">{{ __('Active') }}</flux:select.option>
+                        <flux:select.option value="expired">{{ __('Expired') }}</flux:select.option>
+                        <flux:select.option value="cancelled">{{ __('Cancelled') }}</flux:select.option>
+                    </flux:select>
+                </div>
 
-    </flux:table>
+                <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
+                    <div class="flex items-center gap-3">
+                        <input id="mark_cash_paid" type="checkbox" wire:model.live="mark_cash_paid">
+                        <label for="mark_cash_paid" class="text-sm font-medium">{{ __('Collect payment by cash') }}</label>
+                    </div>
 
+                    <flux:text class="mt-2 text-sm text-zinc-500">
+                        {{ __('Use this when the owner receives payment offline. Student-side gateway support can be added later without changing this flow.') }}
+                    </flux:text>
+
+                    @if ($mark_cash_paid)
+                        <div class="mt-4">
+                            <flux:input type="datetime-local" wire:model="paid_at" label="Cash Collected At" />
+                        </div>
+                    @endif
+                </div>
+
+                <div class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                    <flux:text class="text-sm text-zinc-500">{{ __('Preview') }}</flux:text>
+                    <div class="mt-3 grid gap-3 md:grid-cols-3">
+                        <div>
+                            <flux:text class="text-sm">{{ __('Amount') }}</flux:text>
+                            <flux:heading size="sm">INR {{ number_format((float) $amount, 2) }}</flux:heading>
+                        </div>
+
+                        <div>
+                            <flux:text class="text-sm">{{ __('Status') }}</flux:text>
+                            <flux:heading size="sm">{{ ucfirst($status) }}</flux:heading>
+                        </div>
+
+                        <div>
+                            <flux:text class="text-sm">{{ __('Payment') }}</flux:text>
+                            <flux:heading size="sm">{{ $mark_cash_paid ? __('Cash Collected') : __('Pending') }}</flux:heading>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3">
+                    <flux:modal.close>
+                        <flux:button type="button" variant="ghost" wire:click="resetMembershipForm">
+                            {{ __('Cancel') }}
+                        </flux:button>
+                    </flux:modal.close>
+
+                    <flux:button type="submit">
+                        {{ __('Save Membership') }}
+                    </flux:button>
+                </div>
+            </form>
+        </div>
+    </flux:modal>
 </section>
