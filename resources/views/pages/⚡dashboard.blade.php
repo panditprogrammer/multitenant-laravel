@@ -299,7 +299,7 @@ new class extends Component {
                         <flux:button class="w-full justify-center" variant="outline" :href="route('room.manage')" wire:navigate>
                             {{ __('Manage Rooms') }}
                         </flux:button>
-                        <flux:button class="w-full justify-center" variant="outline" :href="route('student.create')" wire:navigate>
+                        <flux:button class="w-full justify-center" variant="outline" :href="route('student.manage')" wire:navigate>
                             {{ __('Create Student') }}
                         </flux:button>
                         <flux:button class="w-full justify-center" variant="outline" :href="route('student.manage')" wire:navigate>
