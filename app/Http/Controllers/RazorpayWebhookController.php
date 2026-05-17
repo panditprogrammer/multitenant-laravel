@@ -12,17 +12,12 @@ class RazorpayWebhookController extends Controller
 {
     public function __invoke(Request $request, MembershipPaymentService $membershipPaymentService)
     {
-        $secret = (string) config('services.razorpay.webhook_secret');
-        $signature = (string) $request->header('X-Razorpay-Signature');
-        $payload = $request->getContent();
-
-        abort_if($secret === '', 500, 'Razorpay webhook secret is missing.');
-        abort_unless(hash_equals(hash_hmac('sha256', $payload, $secret), $signature), 403);
-
         $data = $request->json()->all();
         $event = (string) data_get($data, 'event', '');
         $paymentEntity = data_get($data, 'payload.payment.entity', []);
         $orderEntity = data_get($data, 'payload.order.entity', []);
+        $signature = (string) $request->header('X-Razorpay-Signature');
+        $payload = $request->getContent();
 
         $orderId = data_get($paymentEntity, 'order_id') ?: data_get($orderEntity, 'id');
         $paymentId = data_get($paymentEntity, 'id');
@@ -32,11 +27,25 @@ class RazorpayWebhookController extends Controller
         $payment = Payment::query()
             ->when($orderId, fn ($query) => $query->where('razorpay_order_id', $orderId))
             ->when(!$orderId && $paymentId, fn ($query) => $query->where('razorpay_payment_id', $paymentId))
+            ->with('library.owner')
             ->first();
 
-        if (!$payment && $membershipId) {
-            $membership = Membership::find($membershipId);
+        $membership = null;
 
+        if (!$payment && $membershipId) {
+            $membership = Membership::query()
+                ->with('library.owner')
+                ->find($membershipId);
+        }
+
+        $secret = (string) ($payment?->library?->owner?->razorpay_webhook_secret
+            ?: $membership?->library?->owner?->razorpay_webhook_secret
+            ?: config('services.razorpay.webhook_secret'));
+
+        abort_if($secret === '', 500, 'Razorpay webhook secret is missing.');
+        abort_unless(hash_equals(hash_hmac('sha256', $payload, $secret), $signature), 403);
+
+        if (!$payment && $membership) {
             if ($membership) {
                 $payment = Payment::create([
                     'membership_id' => $membership->id,
@@ -53,7 +62,7 @@ class RazorpayWebhookController extends Controller
         }
 
         if (!$payment) {
-            return response()->json(['received' => true]);
+            return response()->json(['received' => false], 404);
         }
 
         $status = match ($event) {

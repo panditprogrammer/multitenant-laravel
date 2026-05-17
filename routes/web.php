@@ -1,5 +1,6 @@
 <?php
 
+use App\Livewire\Settings\General;
 use App\Http\Controllers\StudentMembershipPaymentController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
@@ -29,6 +30,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('/membership/manage/{library}', 'library::membership.manage')
             ->name('membership.manage');
         Route::livewire('payment/manage', 'library::payment.manage')->name('payment.manage');
+        Route::redirect('setup-configurations', 'setup-configurations/payment-gateway');
+        Route::livewire('setup-configurations/payment-gateway', General::class)->name('setup.payment-gateway.edit');
     });
 
     // student routes

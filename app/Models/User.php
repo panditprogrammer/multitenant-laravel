@@ -13,8 +13,8 @@ use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
 
-#[Fillable(['name', 'email', 'password', 'profile_image', 'role', 'library_id'])]
-#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
+#[Fillable(['name', 'email', 'password', 'profile_image', 'role', 'library_id', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret'])]
+#[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'razorpay_key_secret', 'razorpay_webhook_secret'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
@@ -30,6 +30,9 @@ class User extends Authenticatable
         return [
             'email_verified_at' => 'datetime',
             'password' => 'hashed',
+            'razorpay_key_id' => 'encrypted',
+            'razorpay_key_secret' => 'encrypted',
+            'razorpay_webhook_secret' => 'encrypted',
         ];
     }
 

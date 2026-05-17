@@ -55,7 +55,8 @@ new class extends Component {
         $this->membershipHistory = $user->memberships;
         $this->paymentHistory = $user->payments;
         $this->schedule = $schedule;
-        $this->razorpayEnabled = filled(config('services.razorpay.key_id'));
+        $this->razorpayEnabled = filled($currentMembership?->library?->owner?->razorpay_key_id)
+            || filled(config('services.razorpay.key_id'));
     }
 };
 ?>

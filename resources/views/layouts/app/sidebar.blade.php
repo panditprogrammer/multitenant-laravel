@@ -36,6 +36,9 @@
                         <flux:sidebar.item icon="folder" :href="route('payment.manage')" :current="request()->routeIs('payment.manage')" wire:navigate>
                             {{ __('Payments') }}
                         </flux:sidebar.item>
+                        <flux:sidebar.item icon="cog" :href="route('setup.payment-gateway.edit')" :current="request()->routeIs('setup.payment-gateway.edit')" wire:navigate>
+                            {{ __('Setup & Configurations') }}
+                        </flux:sidebar.item>
                     @endif
 
                     @if (auth()->user()->role === 'student')
@@ -52,10 +55,6 @@
             <flux:spacer />
 
             <flux:sidebar.nav>
-                <flux:sidebar.item icon="folder-git-2" href="https://github.com/laravel/livewire-starter-kit" target="_blank">
-                    {{ __('Repository') }}
-                </flux:sidebar.item>
-
                 <flux:sidebar.item icon="book-open-text" href="https://laravel.com/docs/starter-kits#livewire" target="_blank">
                     {{ __('Documentation') }}
                 </flux:sidebar.item>
@@ -96,6 +95,12 @@
                     <flux:menu.separator />
 
                     <flux:menu.radio.group>
+                        @if (auth()->user()->role === 'owner')
+                            <flux:menu.item :href="route('setup.payment-gateway.edit')" icon="wrench-screwdriver" wire:navigate>
+                                {{ __('Setup & Configurations') }}
+                            </flux:menu.item>
+                        @endif
+
                         <flux:menu.item :href="route('profile.edit')" icon="cog" wire:navigate>
                             {{ __('Settings') }}
                         </flux:menu.item>

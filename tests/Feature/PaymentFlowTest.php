@@ -51,9 +51,6 @@ function createMembershipForStudent(User $owner, User $student): Membership
 }
 
 test('student can create a razorpay order for an unpaid membership', function () {
-    config()->set('services.razorpay.key_id', 'rzp_test_key');
-    config()->set('services.razorpay.key_secret', 'rzp_test_secret');
-
     Http::fake([
         'https://api.razorpay.com/v1/orders' => Http::response([
             'id' => 'order_test_123',
@@ -65,7 +62,11 @@ test('student can create a razorpay order for an unpaid membership', function ()
         ], 200),
     ]);
 
-    $owner = User::factory()->create(['role' => 'owner']);
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'razorpay_key_id' => 'rzp_test_key',
+        'razorpay_key_secret' => 'rzp_test_secret',
+    ]);
     $student = User::factory()->create(['role' => 'student']);
     $membership = createMembershipForStudent($owner, $student);
 
@@ -86,9 +87,10 @@ test('student can create a razorpay order for an unpaid membership', function ()
 });
 
 test('razorpay webhook verifies payment and updates membership status', function () {
-    config()->set('services.razorpay.webhook_secret', 'whsec_test_123');
-
-    $owner = User::factory()->create(['role' => 'owner']);
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'razorpay_webhook_secret' => 'whsec_test_123',
+    ]);
     $student = User::factory()->create(['role' => 'student']);
     $membership = createMembershipForStudent($owner, $student);
 

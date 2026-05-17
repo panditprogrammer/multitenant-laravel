@@ -17,8 +17,9 @@ class StudentMembershipPaymentController extends Controller
         abort_if($membership->status === 'cancelled', 422, 'Cancelled memberships cannot be paid.');
         abort_if($membership->paid_at, 422, 'This membership is already paid.');
 
-        $keyId = (string) config('services.razorpay.key_id');
-        $keySecret = (string) config('services.razorpay.key_secret');
+        $owner = $membership->library?->owner;
+        $keyId = (string) ($owner?->razorpay_key_id ?: config('services.razorpay.key_id'));
+        $keySecret = (string) ($owner?->razorpay_key_secret ?: config('services.razorpay.key_secret'));
 
         abort_if($keyId === '' || $keySecret === '', 422, 'Razorpay is not configured yet.');
 
