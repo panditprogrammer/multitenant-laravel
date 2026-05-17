@@ -61,4 +61,9 @@ class Membership extends Model
     {
         return $this->hasOne(Payment::class)->latestOfMany();
     }
+
+    public function attendances()
+    {
+        return $this->hasMany(Attendance::class);
+    }
 }

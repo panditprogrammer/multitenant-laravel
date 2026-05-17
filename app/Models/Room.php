@@ -30,4 +30,9 @@ class Room extends Model
     {
         return $this->belongsTo(Library::class);
     }
+
+    public function attendances()
+    {
+        return $this->hasMany(Attendance::class);
+    }
 }

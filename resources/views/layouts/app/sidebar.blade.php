@@ -41,12 +41,20 @@
                         :current="request()->routeIs('payment.manage')" wire:navigate>
                         {{ __('Payments') }}
                     </flux:sidebar.item>
+                    <flux:sidebar.item icon="calendar-days" :href="route('owner.attendance')"
+                        :current="request()->routeIs('owner.attendance')" wire:navigate>
+                        {{ __('Attendance') }}
+                    </flux:sidebar.item>
                 @endif
 
                 @if (auth()->user()->role === 'student')
                     <flux:sidebar.item icon="folder" :href="route('student.payments')"
                         :current="request()->routeIs('student.payments')" wire:navigate>
                         {{ __('My Payments') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="calendar-days" :href="route('student.attendance')"
+                        :current="request()->routeIs('student.attendance')" wire:navigate>
+                        {{ __('Attendance') }}
                     </flux:sidebar.item>
                 @endif
             </flux:sidebar.group>
