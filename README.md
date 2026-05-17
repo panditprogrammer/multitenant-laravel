@@ -9,4 +9,8 @@
 
 ## Multiple roles login management by owner
 
-1. ower can create multiple staff and assign roles
+1. ower can create multiple staff and assign roles 
+
+owner can create roles by select specific permissions
+
+owner can create user login with role.
