@@ -84,4 +84,9 @@ class Library extends Model
     {
         return $this->hasMany(Shift::class);
     }
+
+    public function payments()
+    {
+        return $this->hasMany(Payment::class);
+    }
 }

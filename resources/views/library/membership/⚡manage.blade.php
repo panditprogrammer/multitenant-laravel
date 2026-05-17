@@ -2,6 +2,7 @@
 
 use App\Models\Library;
 use App\Models\Membership;
+use App\Services\MembershipPaymentService;
 use Carbon\Carbon;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -23,6 +24,7 @@ new class extends Component {
     public $status = 'active';
     public $mark_cash_paid = false;
     public $paid_at = '';
+    public $membershipAlreadyPaid = false;
 
     public $sortBy = 'start_date';
     public $sortDirection = 'desc';
@@ -64,7 +66,7 @@ new class extends Component {
     {
         return Membership::query()
             ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
-            ->with(['user', 'seat.room', 'library', 'shifts'])
+            ->with(['user', 'seat.room', 'library', 'shifts', 'latestPayment'])
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->when($this->filter_status, fn ($query) => $query->where('status', $this->filter_status))
             ->when($this->filter_payment, function ($query) {
@@ -142,6 +144,7 @@ new class extends Component {
         $this->status = $membership->status;
         $this->mark_cash_paid = (bool) ($membership->payment_method === 'cash' && $membership->paid_at);
         $this->paid_at = $membership->paid_at?->format('Y-m-d\TH:i') ?? '';
+        $this->membershipAlreadyPaid = (bool) $membership->paid_at;
         $this->resetErrorBag();
         $this->resetValidation();
     }
@@ -165,13 +168,16 @@ new class extends Component {
             'end_date' => $this->end_date,
             'amount' => $this->amount,
             'status' => $this->status,
-            'payment_method' => $this->mark_cash_paid ? 'cash' : null,
-            'paid_at' => $this->mark_cash_paid
-                ? ($this->paid_at ? Carbon::parse($this->paid_at) : now())
-                : null,
         ]);
 
-        $this->dispatch('success', ['message' => $this->mark_cash_paid ? 'Membership updated and cash payment collected!' : 'Membership updated successfully!']);
+        if (!$membership->paid_at && $this->mark_cash_paid) {
+            app(MembershipPaymentService::class)->recordCashPayment(
+                $membership->fresh(),
+                $this->paid_at ? Carbon::parse($this->paid_at) : now()
+            );
+        }
+
+        $this->dispatch('success', ['message' => !$membership->paid_at && $this->mark_cash_paid ? 'Membership updated and cash payment collected!' : 'Membership updated successfully!']);
         $this->resetMembershipForm();
     }
 
@@ -185,6 +191,7 @@ new class extends Component {
             'status',
             'mark_cash_paid',
             'paid_at',
+            'membershipAlreadyPaid',
         ]);
 
         $this->amount = 0;
@@ -201,7 +208,7 @@ new class extends Component {
         <div class="flex items-center justify-between">
             <div>
                 <flux:heading size="xl" level="1">{{ __('Manage Memberships') }}</flux:heading>
-                <flux:subheading size="lg" class="mb-6">{{ __('Track active plans, update dates, and collect owner-side cash payments') }}</flux:subheading>
+                <flux:subheading size="lg" class="mb-6">{{ __('Track active plans, update dates, and manage cash or verified online payments') }}</flux:subheading>
             </div>
         </div>
 
@@ -224,7 +231,7 @@ new class extends Component {
         <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
             <flux:text class="text-sm text-zinc-500">{{ __('Cash Collected') }}</flux:text>
             <flux:heading size="lg" class="mt-2">{{ $this->membershipStats['cash_paid'] }}</flux:heading>
-            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Memberships already marked as paid by cash') }}</flux:text>
+            <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Memberships paid offline by the owner') }}</flux:text>
         </div>
 
         <div class="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-700 dark:bg-zinc-900">
@@ -255,11 +262,11 @@ new class extends Component {
                 <flux:select.option value="cancelled">{{ __('Cancelled') }}</flux:select.option>
             </flux:select>
 
-            <flux:select wire:model.live="filter_payment" label="Payment">
-                <flux:select.option value="">{{ __('All Payments') }}</flux:select.option>
-                <flux:select.option value="paid">{{ __('Cash Collected') }}</flux:select.option>
-                <flux:select.option value="pending">{{ __('Pending Payment') }}</flux:select.option>
-            </flux:select>
+                <flux:select wire:model.live="filter_payment" label="Payment">
+                    <flux:select.option value="">{{ __('All Payments') }}</flux:select.option>
+                <flux:select.option value="paid">{{ __('Paid') }}</flux:select.option>
+                    <flux:select.option value="pending">{{ __('Pending Payment') }}</flux:select.option>
+                </flux:select>
         </div>
     </div>
 
@@ -285,6 +292,11 @@ new class extends Component {
                     @php
                         $isExpiring = $membership->status === 'active' && $membership->end_date && !$membership->end_date->isPast() && now()->diffInDays($membership->end_date, false) <= 3;
                         $isPaid = (bool) $membership->paid_at;
+                        $paymentLabel = match ($membership->payment_method) {
+                            'cash' => __('Cash Paid'),
+                            'razorpay' => __('Online Paid'),
+                            default => __('Pending'),
+                        };
                     @endphp
                     <flux:table.row :key="$membership->id">
                         <flux:table.cell>
@@ -340,7 +352,7 @@ new class extends Component {
                                 <div class="font-semibold">INR {{ number_format((float) $membership->amount, 2) }}</div>
                                 <div class="flex flex-wrap gap-2">
                                     <flux:badge :color="$isPaid ? 'green' : 'amber'">
-                                        {{ $isPaid ? __('Cash Paid') : __('Pending') }}
+                                        {{ $isPaid ? $paymentLabel : __('Pending') }}
                                     </flux:badge>
 
                                     @if ($membership->paid_at)
@@ -374,7 +386,7 @@ new class extends Component {
             <div>
                 <flux:heading size="lg">{{ __('Manage Membership') }}</flux:heading>
                 <flux:text class="mt-1 text-sm text-zinc-500">
-                    {{ __('Adjust the membership period and record cash collection from the owner side.') }}
+                    {{ __('Adjust the membership period and record owner-side cash collection when needed.') }}
                 </flux:text>
             </div>
 
@@ -396,18 +408,24 @@ new class extends Component {
 
                 <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
                     <div class="flex items-center gap-3">
-                        <input id="mark_cash_paid" type="checkbox" wire:model.live="mark_cash_paid">
+                        <input id="mark_cash_paid" type="checkbox" wire:model.live="mark_cash_paid" @disabled($membershipAlreadyPaid)>
                         <label for="mark_cash_paid" class="text-sm font-medium">{{ __('Collect payment by cash') }}</label>
                     </div>
 
                     <flux:text class="mt-2 text-sm text-zinc-500">
-                        {{ __('Use this when the owner receives payment offline. Student-side gateway support can be added later without changing this flow.') }}
+                        {{ __('Use this when the owner receives payment offline. Verified online payments are recorded automatically through Razorpay webhooks.') }}
                     </flux:text>
 
                     @if ($mark_cash_paid)
                         <div class="mt-4">
                             <flux:input type="datetime-local" wire:model="paid_at" label="Cash Collected At" />
                         </div>
+                    @endif
+
+                    @if ($membershipAlreadyPaid)
+                        <flux:text class="mt-3 text-sm text-green-600">
+                            {{ __('This membership already has a verified payment recorded.') }}
+                        </flux:text>
                     @endif
                 </div>
 

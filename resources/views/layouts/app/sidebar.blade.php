@@ -33,11 +33,17 @@
                         <flux:sidebar.item icon="user" :href="route('membership.manage', 0)" :current="request()->routeIs('membership.manage')" wire:navigate>
                             {{ __('Manage Memberships') }}
                         </flux:sidebar.item>
+                        <flux:sidebar.item icon="folder" :href="route('payment.manage')" :current="request()->routeIs('payment.manage')" wire:navigate>
+                            {{ __('Payments') }}
+                        </flux:sidebar.item>
                     @endif
 
                     @if (auth()->user()->role === 'student')
                         <flux:sidebar.item icon="user" :href="route('student.dashboard')" :current="request()->routeIs('student.dashboard')" wire:navigate>
                             {{ __('My Dashboard') }}
+                        </flux:sidebar.item>
+                        <flux:sidebar.item icon="folder" :href="route('student.payments')" :current="request()->routeIs('student.payments')" wire:navigate>
+                            {{ __('My Payments') }}
                         </flux:sidebar.item>
                     @endif
                 </flux:sidebar.group>

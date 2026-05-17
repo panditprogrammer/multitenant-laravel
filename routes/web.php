@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\StudentMembershipPaymentController;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Route;
 
@@ -27,11 +28,15 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('student/manage', 'library::student.manage')->name('student.manage');
         Route::livewire('/membership/manage/{library}', 'library::membership.manage')
             ->name('membership.manage');
+        Route::livewire('payment/manage', 'library::payment.manage')->name('payment.manage');
     });
 
     // student routes
     Route::middleware(['auth', 'role:student'])->prefix("student")->name("student.")->group(function () {
         Route::livewire('dashboard', 'pages::student.dashboard')->name('dashboard');
+        Route::livewire('payments', 'pages::student.payments')->name('payments');
+        Route::post('memberships/{membership}/payments/razorpay/order', [StudentMembershipPaymentController::class, 'storeRazorpayOrder'])
+            ->name('memberships.payments.razorpay.order');
     });
 });
 

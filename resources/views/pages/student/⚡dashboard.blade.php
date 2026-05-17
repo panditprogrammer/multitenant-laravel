@@ -11,14 +11,20 @@ new class extends Component {
     public $currentMembership;
     public $upcomingRenewal;
     public $membershipHistory;
+    public $paymentHistory;
     public $schedule;
+    public $razorpayEnabled = false;
 
 
     public function mount()
     {
         $user = auth()
             ->user()
-            ->load(['library.owner', 'memberships' => fn($query) => $query->with(['seat.room.library', 'shifts'])->latest()]);
+            ->load([
+                'library.owner',
+                'memberships' => fn($query) => $query->with(['seat.room.library', 'shifts', 'latestPayment'])->latest(),
+                'payments' => fn($query) => $query->with(['membership.seat.room.library'])->latest(),
+            ]);
 
         $currentMembership = $user->memberships->first(
             fn(Membership $membership) => $membership->status === 'active' && !$membership->end_date?->isPast()
@@ -47,7 +53,9 @@ new class extends Component {
         $this->currentMembership = $currentMembership;
         $this->upcomingRenewal = $upcomingRenewal;
         $this->membershipHistory = $user->memberships;
+        $this->paymentHistory = $user->payments;
         $this->schedule = $schedule;
+        $this->razorpayEnabled = filled(config('services.razorpay.key_id'));
     }
 };
 ?>
@@ -156,6 +164,40 @@ new class extends Component {
                                     {{ $library?->phone ?: ($library?->email ?: 'No contact added') }}
                                 </flux:text>
                             </div>
+
+                            <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80 md:col-span-2">
+                                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                    <div>
+                                        <flux:text class="text-sm text-zinc-500">{{ __('Payment Status') }}</flux:text>
+                                        <flux:text class="mt-2 font-medium text-zinc-800 dark:text-zinc-100">
+                                            @if ($currentMembership->paid_at)
+                                                {{ $currentMembership->payment_method === 'razorpay' ? __('Paid Online') : __('Paid by Cash') }}
+                                            @else
+                                                {{ __('Pending') }}
+                                            @endif
+                                        </flux:text>
+                                        <flux:text class="mt-1 text-sm text-zinc-500">
+                                            @if ($currentMembership->paid_at)
+                                                {{ __('Verified on') }} {{ $currentMembership->paid_at->format('d M Y h:i A') }}
+                                            @else
+                                                {{ __('You can pay this membership fee online or visit the owner for cash collection.') }}
+                                            @endif
+                                        </flux:text>
+                                    </div>
+
+                                    @if (!$currentMembership->paid_at && $razorpayEnabled)
+                                        <button
+                                            type="button"
+                                            class="inline-flex items-center justify-center rounded-lg bg-zinc-900 px-4 py-2 text-sm font-medium text-white transition hover:bg-zinc-700 dark:bg-white dark:text-zinc-900 dark:hover:bg-zinc-200"
+                                            data-razorpay-pay
+                                            data-membership-id="{{ $currentMembership->id }}"
+                                            data-order-url="{{ route('student.memberships.payments.razorpay.order', $currentMembership) }}"
+                                        >
+                                            {{ __('Pay Online with Razorpay') }}
+                                        </button>
+                                    @endif
+                                </div>
+                            </div>
                         </div>
                     @else
                         <div class="mt-6">
@@ -216,6 +258,55 @@ new class extends Component {
                         </flux:table>
                     </div>
                 </div>
+
+                <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <flux:heading size="lg">{{ __('Payment History') }}</flux:heading>
+                            <flux:text class="mt-1 text-sm text-zinc-500">
+                                {{ __('Cash and online payments recorded for your memberships') }}
+                            </flux:text>
+                        </div>
+
+                        <flux:badge color="zinc">{{ $paymentHistory?->count() ?? 0 }}</flux:badge>
+                    </div>
+
+                    <div class="mt-6">
+                        <flux:table>
+                            <flux:table.columns>
+                                <flux:table.column>{{ __('Library') }}</flux:table.column>
+                                <flux:table.column>{{ __('Method') }}</flux:table.column>
+                                <flux:table.column>{{ __('Amount') }}</flux:table.column>
+                                <flux:table.column>{{ __('Status') }}</flux:table.column>
+                                <flux:table.column>{{ __('Reference') }}</flux:table.column>
+                                <flux:table.column>{{ __('Date') }}</flux:table.column>
+                            </flux:table.columns>
+
+                            <flux:table.rows>
+                                @forelse ($paymentHistory as $payment)
+                                    <flux:table.row :key="$payment->id">
+                                        <flux:table.cell>{{ $payment->membership?->seat?->room?->library?->name ?? $library?->name ?? '-' }}</flux:table.cell>
+                                        <flux:table.cell>{{ ucfirst($payment->payment_method ?? 'pending') }}</flux:table.cell>
+                                        <flux:table.cell>INR {{ number_format((float) $payment->amount, 2) }}</flux:table.cell>
+                                        <flux:table.cell>
+                                            <flux:badge color="{{ in_array($payment->status, ['paid', 'captured'], true) ? 'green' : (in_array($payment->status, ['failed'], true) ? 'red' : 'amber') }}">
+                                                {{ ucfirst($payment->status) }}
+                                            </flux:badge>
+                                        </flux:table.cell>
+                                        <flux:table.cell>{{ $payment->razorpay_payment_id ?? $payment->reference ?? '-' }}</flux:table.cell>
+                                        <flux:table.cell>{{ ($payment->paid_at ?? $payment->created_at)?->format('d M Y h:i A') ?? '-' }}</flux:table.cell>
+                                    </flux:table.row>
+                                @empty
+                                    <flux:table.row>
+                                        <flux:table.cell colspan="6" class="text-center text-zinc-500">
+                                            {{ __('No payment history available yet.') }}
+                                        </flux:table.cell>
+                                    </flux:table.row>
+                                @endforelse
+                            </flux:table.rows>
+                        </flux:table>
+                    </div>
+                </div>
             </div>
 
             <div class="space-y-6">
@@ -263,4 +354,64 @@ new class extends Component {
             </div>
         </div>
     </div>
+
+    @if ($razorpayEnabled)
+        <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+        <script>
+            document.addEventListener('click', async function (event) {
+                const trigger = event.target.closest('[data-razorpay-pay]');
+
+                if (!trigger) {
+                    return;
+                }
+
+                event.preventDefault();
+                trigger.disabled = true;
+
+                try {
+                    const response = await fetch(trigger.dataset.orderUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Accept': 'application/json',
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        },
+                        body: JSON.stringify({}),
+                    });
+
+                    const data = await response.json();
+
+                    if (!response.ok) {
+                        throw new Error(data.message || 'Unable to create Razorpay order.');
+                    }
+
+                    const checkout = new window.Razorpay({
+                        key: data.key,
+                        amount: data.payment.amount,
+                        currency: data.payment.currency,
+                        name: data.payment.name,
+                        description: data.payment.description,
+                        order_id: data.payment.order_id,
+                        prefill: data.payment.prefill,
+                        handler: function () {
+                            window.alert('Payment submitted successfully. It will appear as paid after the Razorpay webhook verifies it.');
+                            window.setTimeout(function () {
+                                window.location.reload();
+                            }, 1500);
+                        },
+                        modal: {
+                            ondismiss: function () {
+                                trigger.disabled = false;
+                            }
+                        }
+                    });
+
+                    checkout.open();
+                } catch (error) {
+                    window.alert(error.message || 'Unable to start payment.');
+                    trigger.disabled = false;
+                }
+            });
+        </script>
+    @endif
 </section>

@@ -2,6 +2,7 @@
 
 use App\Models\Library;
 use App\Models\Membership;
+use App\Models\Payment;
 use App\Models\Room;
 use App\Models\Seat;
 use App\Models\Shift;
@@ -62,6 +63,19 @@ test('owners can view their dashboard data', function () {
 
     $membership->shifts()->sync([$shift->id]);
 
+    Payment::create([
+        'membership_id' => $membership->id,
+        'library_id' => $library->id,
+        'user_id' => $student->id,
+        'amount' => 1500,
+        'currency' => 'INR',
+        'payment_method' => 'cash',
+        'status' => 'paid',
+        'reference' => 'CASH-000007',
+        'paid_at' => now(),
+        'verified_at' => now(),
+    ]);
+
     $response = $this->actingAs($owner)->get(route('owner.dashboard'));
 
     $response->assertOk();
@@ -70,6 +84,8 @@ test('owners can view their dashboard data', function () {
     $response->assertSee('Reading Hall');
     $response->assertSee('Evening');
     $response->assertSee('1,500.00');
+    $response->assertSee('Recent Payments');
+    $response->assertSee('Cash');
 });
 
 test('dashboard route redirects owners to owner dashboard', function () {

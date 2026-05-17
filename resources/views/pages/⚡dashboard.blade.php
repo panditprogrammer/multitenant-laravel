@@ -2,11 +2,13 @@
 
 use App\Models\Library;
 use App\Models\Membership;
+use App\Models\Payment;
 use Livewire\Component;
 
 new class extends Component {
     public $libraries;
     public $recentMemberships;
+    public $recentPayments;
     public $expiringMemberships;
     public $stats = [];
 
@@ -55,6 +57,13 @@ new class extends Component {
             ->whereDate('end_date', '>=', today())
             ->whereDate('end_date', '<=', today()->copy()->addDays(3))
             ->orderBy('end_date')
+            ->take(8)
+            ->get();
+
+        $this->recentPayments = Payment::query()
+            ->with(['user', 'library', 'membership.seat.room'])
+            ->whereIn('library_id', $libraryIds)
+            ->latest()
             ->take(8)
             ->get();
 
@@ -244,6 +253,53 @@ new class extends Component {
                                     <flux:table.row>
                                         <flux:table.cell colspan="5" class="text-center text-zinc-500">
                                             {{ __('No memberships found yet.') }}
+                                        </flux:table.cell>
+                                    </flux:table.row>
+                                @endforelse
+                            </flux:table.rows>
+                        </flux:table>
+                    </div>
+                </div>
+
+                <div class="rounded-xl border border-zinc-200 bg-white p-6 dark:border-zinc-700 dark:bg-zinc-900">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <flux:heading size="lg">{{ __('Recent Payments') }}</flux:heading>
+                            <flux:text class="mt-1 text-sm text-zinc-500">
+                                {{ __('Verified cash and Razorpay collections across your libraries') }}
+                            </flux:text>
+                        </div>
+                    </div>
+
+                    <div class="mt-6">
+                        <flux:table>
+                            <flux:table.columns>
+                                <flux:table.column>{{ __('Student') }}</flux:table.column>
+                                <flux:table.column>{{ __('Library') }}</flux:table.column>
+                                <flux:table.column>{{ __('Method') }}</flux:table.column>
+                                <flux:table.column>{{ __('Amount') }}</flux:table.column>
+                                <flux:table.column>{{ __('Status') }}</flux:table.column>
+                                <flux:table.column>{{ __('Date') }}</flux:table.column>
+                            </flux:table.columns>
+
+                            <flux:table.rows>
+                                @forelse ($recentPayments as $payment)
+                                    <flux:table.row :key="$payment->id">
+                                        <flux:table.cell>{{ $payment->user?->name ?? '-' }}</flux:table.cell>
+                                        <flux:table.cell>{{ $payment->library?->name ?? '-' }}</flux:table.cell>
+                                        <flux:table.cell>{{ ucfirst($payment->payment_method ?? 'pending') }}</flux:table.cell>
+                                        <flux:table.cell>INR {{ number_format((float) $payment->amount, 2) }}</flux:table.cell>
+                                        <flux:table.cell>
+                                            <flux:badge color="{{ in_array($payment->status, ['paid', 'captured'], true) ? 'green' : (in_array($payment->status, ['failed'], true) ? 'red' : 'amber') }}">
+                                                {{ ucfirst($payment->status) }}
+                                            </flux:badge>
+                                        </flux:table.cell>
+                                        <flux:table.cell>{{ ($payment->paid_at ?? $payment->created_at)?->format('d M Y h:i A') ?? '-' }}</flux:table.cell>
+                                    </flux:table.row>
+                                @empty
+                                    <flux:table.row>
+                                        <flux:table.cell colspan="6" class="text-center text-zinc-500">
+                                            {{ __('No payment history found yet.') }}
                                         </flux:table.cell>
                                     </flux:table.row>
                                 @endforelse
