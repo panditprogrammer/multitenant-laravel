@@ -1,7 +1,5 @@
 <?php
 
-use App\Livewire\Owner\AttendancePage as OwnerAttendancePage;
-use App\Livewire\Student\AttendancePage as StudentAttendancePage;
 use App\Livewire\Settings\General;
 use App\Http\Controllers\StudentMembershipPaymentController;
 use Illuminate\Support\Facades\Auth;
@@ -32,7 +30,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::livewire('/membership/manage/{library}', 'library::membership.manage')
             ->name('membership.manage');
         Route::livewire('payment/manage', 'library::payment.manage')->name('payment.manage');
-        Route::livewire('attendance', OwnerAttendancePage::class)->name('owner.attendance');
+        Route::livewire('library/attendance', 'library::attendance.manage')->name('owner.attendance');
         Route::redirect('setup-configurations', 'setup-configurations/payment-gateway');
         Route::livewire('setup-configurations/payment-gateway', General::class)->name('setup.payment-gateway.edit');
     });
@@ -41,7 +39,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::middleware(['auth', 'role:student'])->prefix("student")->name("student.")->group(function () {
         Route::livewire('dashboard', 'pages::student.dashboard')->name('dashboard');
         Route::livewire('payments', 'pages::student.payments')->name('payments');
-        Route::livewire('attendance', StudentAttendancePage::class)->name('attendance');
+        Route::livewire('attendance', 'pages::student.attendance')->name('attendance');
         Route::post('memberships/{membership}/payments/razorpay/order', [StudentMembershipPaymentController::class, 'storeRazorpayOrder'])
             ->name('memberships.payments.razorpay.order');
     });

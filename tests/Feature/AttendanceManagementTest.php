@@ -1,7 +1,5 @@
 <?php
 
-use App\Livewire\Owner\AttendancePage as OwnerAttendancePage;
-use App\Livewire\Student\AttendancePage as StudentAttendancePage;
 use App\Models\Attendance;
 use App\Models\Library;
 use App\Models\Membership;
@@ -13,7 +11,7 @@ use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
-test('student can mark attendance from the dedicated attendance page', function () {
+test('student can mark and unmark attendance from the dedicated attendance page', function () {
     $owner = User::factory()->create(['role' => 'owner']);
     $student = User::factory()->create(['role' => 'student']);
 
@@ -53,15 +51,26 @@ test('student can mark attendance from the dedicated attendance page', function 
         ->assertOk()
         ->assertSee('Monthly View');
 
-    Livewire::test(StudentAttendancePage::class)
-        ->call('markTodayAttendance')
-        ->assertSet('month', now()->format('Y-m'));
+    Livewire::test('pages::student.attendance')
+        ->call('toggleTodayAttendance')
+        ->assertSet('month', now()->format('Y-m'))
+        ->assertSee('Unmark Today Attendance');
 
     $this->assertDatabaseHas('attendances', [
         'user_id' => $student->id,
         'library_id' => $library->id,
         'room_id' => $room->id,
         'seat_id' => $seat->id,
+        'attended_on' => today()->startOfDay()->toDateTimeString(),
+    ]);
+
+    Livewire::test('pages::student.attendance')
+        ->call('toggleTodayAttendance')
+        ->assertSet('month', now()->format('Y-m'))
+        ->assertSee('Mark Today Attendance');
+
+    $this->assertDatabaseMissing('attendances', [
+        'user_id' => $student->id,
         'attended_on' => today()->startOfDay()->toDateTimeString(),
     ]);
 });
@@ -163,7 +172,7 @@ test('owner attendance page only shows attendance for owned libraries', function
         ->assertDontSee('Room B')
         ->assertDontSee('B-9');
 
-    Livewire::test(OwnerAttendancePage::class)
+    Livewire::test('pages::attendance')
         ->assertSee('Alpha Library')
         ->assertSee('Room A')
         ->assertSee('A-1')

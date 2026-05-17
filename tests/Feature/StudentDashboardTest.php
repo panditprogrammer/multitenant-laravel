@@ -8,7 +8,6 @@ use App\Models\Seat;
 use App\Models\Shift;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-
 uses(RefreshDatabase::class);
 
 test('students can view their dashboard data', function () {
