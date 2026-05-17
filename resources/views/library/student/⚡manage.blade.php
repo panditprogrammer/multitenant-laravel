@@ -97,6 +97,7 @@ new class extends Component {
         }
 
         return Room::where('library_id', $this->form_library_id)
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
             ->orderBy('name')
             ->get();
     }
@@ -109,6 +110,7 @@ new class extends Component {
         }
 
         return Shift::where('library_id', $this->form_library_id)
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
             ->orderBy('name')
             ->get();
     }
@@ -160,7 +162,10 @@ new class extends Component {
             ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
             ->with([
                 'library',
-                'memberships' => fn ($query) => $query->with(['seat.room', 'shifts'])->latest('end_date'),
+                'memberships' => fn ($query) => $query
+                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))
+                    ->with(['seat.room', 'shifts'])
+                    ->latest('end_date'),
             ])
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->when($this->filter_room_id || $this->filter_shift_id, function ($query) {
@@ -197,7 +202,11 @@ new class extends Component {
         $students = User::query()
             ->where('role', 'student')
             ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
-            ->with(['library', 'memberships'])
+            ->with([
+                'library',
+                'memberships' => fn ($query) => $query
+                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id())),
+            ])
             ->get();
 
         $activeStudents = $students->filter(function ($student) {
@@ -231,7 +240,10 @@ new class extends Component {
             ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
             ->with([
                 'library',
-                'memberships' => fn ($query) => $query->with(['seat.room', 'shifts'])->latest('end_date'),
+                'memberships' => fn ($query) => $query
+                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))
+                    ->with(['seat.room', 'shifts'])
+                    ->latest('end_date'),
             ])
             ->find($this->selectedStudentId);
     }
@@ -276,6 +288,7 @@ new class extends Component {
     {
         $room = Room::with('library')
             ->where('library_id', $this->form_library_id)
+            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
             ->find($this->form_room_id);
 
         if (!$room || !$room->library) {
@@ -369,7 +382,10 @@ new class extends Component {
         $student = User::query()
             ->where('role', 'student')
             ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
-            ->with(['memberships' => fn ($query) => $query->with(['seat.room', 'shifts'])->latest('end_date')])
+            ->with(['memberships' => fn ($query) => $query
+                ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))
+                ->with(['seat.room', 'shifts'])
+                ->latest('end_date')])
             ->findOrFail($id);
 
         $membership = $student->memberships->first(fn ($item) => $item->status === 'active' && $item->end_date && !$item->end_date->isPast())
@@ -409,7 +425,8 @@ new class extends Component {
         $student = User::query()
             ->where('role', 'student')
             ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
-            ->with('memberships')
+            ->with(['memberships' => fn ($query) => $query
+                ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))])
             ->findOrFail($this->editingId);
 
         $conflictingMembership = Membership::where('library_id', $this->form_library_id)

@@ -101,3 +101,54 @@ test('dashboard route redirects students to the student dashboard', function () 
 
     $response->assertRedirect(route('student.dashboard'));
 });
+
+test('student dashboard does not show online payment button when owner gateway is not configured', function () {
+    config()->set('services.razorpay.key_id', 'shared_platform_key');
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'razorpay_key_id' => null,
+    ]);
+
+    $student = User::factory()->create([
+        'role' => 'student',
+        'library_id' => null,
+    ]);
+
+    $library = Library::create([
+        'user_id' => $owner->id,
+        'name' => 'Quiet Space Library',
+        'city' => 'Indore',
+        'normal_price' => 1200,
+        'ac_price' => 1800,
+    ]);
+
+    $student->update(['library_id' => $library->id]);
+
+    $room = Room::create([
+        'library_id' => $library->id,
+        'name' => 'Hall A',
+        'type' => 'AC',
+    ]);
+
+    $seat = Seat::create([
+        'room_id' => $room->id,
+        'seat_number' => 'A-12',
+    ]);
+
+    Membership::create([
+        'library_id' => $library->id,
+        'user_id' => $student->id,
+        'seat_id' => $seat->id,
+        'shift_ids' => [],
+        'start_date' => now()->toDateString(),
+        'end_date' => now()->addMonth()->toDateString(),
+        'amount' => 1800,
+        'status' => 'active',
+    ]);
+
+    $response = $this->actingAs($student)->get(route('student.dashboard'));
+
+    $response->assertOk();
+    $response->assertDontSee('Pay Online with Razorpay');
+});

@@ -86,6 +86,27 @@ test('student can create a razorpay order for an unpaid membership', function ()
     ]);
 });
 
+test('student cannot create a razorpay order when the owner has not configured gateway keys', function () {
+    config()->set('services.razorpay.key_id', 'shared_platform_key');
+    config()->set('services.razorpay.key_secret', 'shared_platform_secret');
+
+    Http::fake();
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+        'razorpay_key_id' => null,
+        'razorpay_key_secret' => null,
+    ]);
+    $student = User::factory()->create(['role' => 'student']);
+    $membership = createMembershipForStudent($owner, $student);
+
+    $response = $this->actingAs($student)
+        ->postJson(route('student.memberships.payments.razorpay.order', $membership));
+
+    $response->assertStatus(422)
+        ->assertJsonPath('message', 'The library owner has not configured Razorpay yet.');
+});
+
 test('razorpay webhook verifies payment and updates membership status', function () {
     $owner = User::factory()->create([
         'role' => 'owner',

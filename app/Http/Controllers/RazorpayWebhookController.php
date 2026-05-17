@@ -39,10 +39,9 @@ class RazorpayWebhookController extends Controller
         }
 
         $secret = (string) ($payment?->library?->owner?->razorpay_webhook_secret
-            ?: $membership?->library?->owner?->razorpay_webhook_secret
-            ?: config('services.razorpay.webhook_secret'));
+            ?: $membership?->library?->owner?->razorpay_webhook_secret);
 
-        abort_if($secret === '', 500, 'Razorpay webhook secret is missing.');
+        abort_if($secret === '', 500, 'Razorpay webhook secret is missing for this owner.');
         abort_unless(hash_equals(hash_hmac('sha256', $payload, $secret), $signature), 403);
 
         if (!$payment && $membership) {
