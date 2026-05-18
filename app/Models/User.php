@@ -22,6 +22,18 @@ class User extends Authenticatable
     /** @use HasFactory<UserFactory> */
     use HasApiTokens, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
+    protected static function booted(): void
+    {
+        static::created(function (self $user): void {
+            if (! $user->role || $user->owner_id !== null || $user->hasRole($user->role)) {
+                return;
+            }
+
+            PermissionRegistry::ensureDefaultRoles();
+            $user->assignRole($user->role);
+        });
+    }
+
     /**
      * Get the attributes that should be cast.
      *
@@ -107,17 +119,13 @@ class User extends Authenticatable
         return $this->role === 'student' || $this->hasRole('student');
     }
 
+    public function isPrimaryOwner(): bool
+    {
+        return $this->role === 'owner' && is_null($this->owner_id);
+    }
+
     public function canAccessOwnerPanel(): bool
     {
-        if ($this->isStudent()) {
-            return false;
-        }
-
-        if ($this->hasRole('owner')) {
-            return true;
-        }
-
-        return true;
-
+        return $this->role === 'owner' && ! $this->isStudent();
     }
 }

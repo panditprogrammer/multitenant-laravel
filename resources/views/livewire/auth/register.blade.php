@@ -9,11 +9,22 @@
             @csrf
 
 
-            {{-- student, library owner role tab selection  --}}
-            <flux:radio.group wire:model="role" variant="segmented" label="Register as">
-                <flux:radio name="role" checked value="student" label="Student" icon="user" />
-                <flux:radio name="role" value="owner" label="Library Owner" icon="building-office" />
-            </flux:radio.group>
+            <fieldset class="space-y-3">
+                <legend class="text-sm font-medium text-zinc-800 dark:text-zinc-100">{{ __('Register as') }}</legend>
+                <div class="grid gap-3 sm:grid-cols-2">
+                    <label class="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-700">
+                        <input type="radio" name="role" value="student" @checked(old('role', 'student') === 'student')>
+                        <span>{{ __('Student') }}</span>
+                    </label>
+                    <label class="flex cursor-pointer items-center gap-3 rounded-xl border border-zinc-200 px-4 py-3 text-sm dark:border-zinc-700">
+                        <input type="radio" name="role" value="owner" @checked(old('role') === 'owner')>
+                        <span>{{ __('Library Owner') }}</span>
+                    </label>
+                </div>
+                @error('role')
+                    <p class="text-sm text-red-600">{{ $message }}</p>
+                @enderror
+            </fieldset>
 
 
             <!-- Name -->

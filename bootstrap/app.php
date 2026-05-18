@@ -16,6 +16,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias([
+            'owner_panel' => \App\Http\Middleware\EnsureCanAccessOwnerPanel::class,
+            'primary_owner' => \App\Http\Middleware\EnsurePrimaryOwner::class,
             'role' => RoleMiddleware::class,
             'permission' => PermissionMiddleware::class,
             'role_or_permission' => RoleOrPermissionMiddleware::class,

@@ -10,18 +10,18 @@ Route::view('/', 'welcome')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::get('dashboard', function () {
-        if (Auth::user()->hasRole('student')) {
+        if (Auth::user()->isStudent()) {
             return redirect()->route('student.dashboard');
         }
 
-        if (Auth::user()->hasRole('owner')) {
+        if (Auth::user()->canAccessOwnerPanel()) {
             return redirect()->route('owner.dashboard');
         }
 
         return view('dashboard');
     })->name('dashboard');
 
-    Route::middleware(['role:owner'])->group(function () {
+    Route::middleware(['owner_panel'])->group(function () {
         Route::livewire('owner/dashboard', 'pages::dashboard')->name('owner.dashboard');
         Route::livewire('library/create', 'pages::library.create')->middleware('permission:view_library')->name('library.create');
         Route::livewire('room/manage', 'library::room.manage')->middleware('permission:view_room')->name('room.manage');
@@ -38,10 +38,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
     });
 
     Route::middleware(['role:student'])->prefix("student")->name("student.")->group(function () {
-        Route::livewire('dashboard', 'pages::student.dashboard')->name('dashboard');
-        Route::livewire('payments', 'pages::student.payments')->name('payments');
-        Route::livewire('attendance', 'pages::student.attendance')->name('attendance');
+        Route::livewire('dashboard', 'pages::student.dashboard')->middleware('permission:view_student_dashboard')->name('dashboard');
+        Route::livewire('payments', 'pages::student.payments')->middleware('permission:view_own_payments')->name('payments');
+        Route::livewire('attendance', 'pages::student.attendance')->middleware('permission:view_own_attendance')->name('attendance');
         Route::post('memberships/{membership}/payments/razorpay/order', [StudentMembershipPaymentController::class, 'storeRazorpayOrder'])
+            ->middleware('permission:create_membership_payment')
             ->name('memberships.payments.razorpay.order');
     });
 });

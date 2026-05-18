@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('name');
             $table->string('email')->unique();
+            $table->string('role')->default('student');
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
             $table->foreignId('library_id')->nullable(); // student belongs to library

@@ -11,7 +11,7 @@ uses(RefreshDatabase::class);
 test('database seeder creates default owner permissions and assigns them to owner role', function () {
     $this->seed(DatabaseSeeder::class);
 
-    $owner = User::query()->where('email', 'owner@example.com')->first();
+    $owner = User::factory()->create(['role' => 'owner']);
     $ownerRole = Role::findByName('owner', 'web');
 
     expect($owner)->not->toBeNull();
@@ -35,6 +35,21 @@ test('database seeder creates default owner permissions and assigns them to owne
         'edit_membership',
         'view_payment',
         'view_attendance',
+    );
+});
+
+test('database seeder creates default student permissions and assigns them to student role', function () {
+    $this->seed(DatabaseSeeder::class);
+
+    $student = User::factory()->create(['role' => 'student']);
+    $studentRole = Role::findByName('student', 'web');
+
+    expect($student->hasRole('student'))->toBeTrue();
+    expect($studentRole->permissions->pluck('name')->all())->toContain(
+        'view_student_dashboard',
+        'view_own_payments',
+        'view_own_attendance',
+        'create_membership_payment',
     );
 });
 
@@ -112,5 +127,5 @@ test('staff login can only access routes allowed by assigned permissions', funct
 
     $this->actingAs($staff)->get(route('student.manage'))->assertOk();
     $this->actingAs($staff)->get(route('room.manage'))->assertForbidden();
-    $this->actingAs($staff)->get(route('dashboard'))->assertRedirect(route('student.manage'));
+    $this->actingAs($staff)->get(route('dashboard'))->assertRedirect(route('owner.dashboard'));
 });

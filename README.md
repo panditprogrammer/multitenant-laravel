@@ -66,3 +66,7 @@ owner can create user login with role.
             'view_payment',
             'view_attendance',
         ];```
+
+
+# Required 
+- fix shift generation in library (library time range)

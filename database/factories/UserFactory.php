@@ -2,11 +2,11 @@
 
 namespace Database\Factories;
 
+use App\Support\PermissionRegistry;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Factories\Factory;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
-use Spatie\Permission\Models\Role;
 
 /**
  * @extends Factory<User>
@@ -21,7 +21,8 @@ class UserFactory extends Factory
     public function configure(): static
     {
         return $this->afterCreating(function (User $user) {
-            if ($user->role && is_null($user->owner_id) && Role::query()->where('name', $user->role)->where('guard_name', 'web')->exists() && !$user->hasRole($user->role)) {
+            if ($user->role && is_null($user->owner_id) && ! $user->hasRole($user->role)) {
+                PermissionRegistry::ensureDefaultRoles();
                 $user->assignRole($user->role);
             }
         });
