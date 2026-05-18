@@ -72,14 +72,12 @@ new class extends Component {
     public function rooms()
     {
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
+            ->whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))
             ->with(['library'])
             ->withCount('seats')
             ->tap(function ($query) {
                 if ($this->sortBy === 'library') {
-                    $query->join('libraries', 'libraries.id', '=', 'rooms.library_id')
-                        ->orderBy('libraries.name', $this->sortDirection)
-                        ->select('rooms.*');
+                    $query->join('libraries', 'libraries.id', '=', 'rooms.library_id')->orderBy('libraries.name', $this->sortDirection)->select('rooms.*');
 
                     return;
                 }
@@ -92,18 +90,13 @@ new class extends Component {
     #[Computed]
     public function roomOptions()
     {
-        return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->with('library')
-            ->orderBy('name')
-            ->get();
+        return Room::query()->whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->with('library')->orderBy('name')->get();
     }
 
     #[Computed]
     public function roomStats()
     {
-        $rooms = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->get();
+        $rooms = Room::whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->get();
 
         return [
             'normal_rooms' => $rooms->where('type', 'NORMAL')->count(),
@@ -122,8 +115,8 @@ new class extends Component {
         }
 
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->with(['library', 'seats' => fn ($query) => $query->orderBy('seat_number')])
+            ->whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))
+            ->with(['library', 'seats' => fn($query) => $query->orderBy('seat_number')])
             ->withCount('seats')
             ->find($this->seatOverviewRoomId);
     }
@@ -168,14 +161,8 @@ new class extends Component {
         $this->authorizePermission($this->editingId ? 'edit_room' : 'create_room');
 
         $this->validate([
-            'lib_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', $this->ownerId()))],
-            'name' => [
-                'required',
-                'min:2',
-                Rule::unique('rooms', 'name')
-                    ->ignore($this->editingId)
-                    ->where(fn ($query) => $query->where('library_id', $this->lib_id)),
-            ],
+            'lib_id' => ['required', Rule::exists('libraries', 'id')->where(fn($query) => $query->where('user_id', $this->ownerId()))],
+            'name' => ['required', 'min:2', Rule::unique('rooms', 'name')->ignore($this->editingId)->where(fn($query) => $query->where('library_id', $this->lib_id))],
             'floor' => 'nullable|string|max:255',
             'type' => 'required|in:AC,NORMAL',
             'has_wifi' => 'boolean',
@@ -192,9 +179,7 @@ new class extends Component {
         ];
 
         if ($this->editingId) {
-            Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-                ->findOrFail($this->editingId)
-                ->update($payload);
+            Room::whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->findOrFail($this->editingId)->update($payload);
         } else {
             Room::create($payload);
         }
@@ -207,8 +192,7 @@ new class extends Component {
     public function editRoom($id)
     {
         $this->authorizePermission('edit_room');
-        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->findOrFail($id);
+        $room = Room::whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->findOrFail($id);
 
         $this->editingId = $room->id;
         $this->name = $room->name;
@@ -224,9 +208,7 @@ new class extends Component {
     public function deleteRoom($id)
     {
         $this->authorizePermission('delete_room');
-        Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->findOrFail($id)
-            ->delete();
+        Room::whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->findOrFail($id)->delete();
 
         $this->dispatch('success', ['message' => 'Room deleted successfully!']);
         $this->resetPage();
@@ -243,8 +225,10 @@ new class extends Component {
             'end' => 'required|integer|gte:start',
         ]);
 
-        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->findOrFail($this->room_id);
+        $room = Room::whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->findOrFail($this->room_id);
+
+        // first delete the previous seats
+        Seat::where('room_id', $room->id)->delete();
 
         for ($i = $this->start; $i <= $this->end; $i++) {
             Seat::firstOrCreate(
@@ -269,23 +253,14 @@ new class extends Component {
     public function openSeatOverview($id)
     {
         $this->authorizePermission('view_seat');
-        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
-            ->findOrFail($id);
+        $room = Room::whereHas('library', fn($query) => $query->where('user_id', $this->ownerId()))->findOrFail($id);
 
         $this->seatOverviewRoomId = $room->id;
     }
 
     public function resetForm()
     {
-        $this->reset([
-            'name',
-            'floor',
-            'type',
-            'has_wifi',
-            'is_active',
-            'lib_id',
-            'editingId',
-        ]);
+        $this->reset(['name', 'floor', 'type', 'has_wifi', 'is_active', 'lib_id', 'editingId']);
 
         $this->type = 'NORMAL';
         $this->is_active = true;
@@ -302,12 +277,14 @@ new class extends Component {
         <div class="flex items-center justify-between">
             <div>
                 <flux:heading size="xl" level="1">{{ __('Manage Rooms') }}</flux:heading>
-                <flux:subheading size="lg" class="mb-6">{{ __('Create and manage rooms across your libraries') }}</flux:subheading>
+                <flux:subheading size="lg" class="mb-6">{{ __('Create and manage rooms across your libraries') }}
+                </flux:subheading>
             </div>
 
             @if (auth()->user()->can('create_room'))
                 <flux:modal.trigger name="create-room-modal">
-                    <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-room-modal')">
+                    <flux:button wire:click="startCreate" x-data=""
+                        x-on:click.prevent="$dispatch('open-modal', 'create-room-modal')">
                         {{ __('Create New Room') }}
                     </flux:button>
                 </flux:modal.trigger>
@@ -386,17 +363,21 @@ new class extends Component {
     <div class="space-y-4">
         <flux:table :paginate="$this->rooms">
             <flux:table.columns>
-                <flux:table.column sortable :sorted="$sortBy === 'name'" :direction="$sortDirection" wire:click="sort('name')">
+                <flux:table.column sortable :sorted="$sortBy === 'name'" :direction="$sortDirection"
+                    wire:click="sort('name')">
                     {{ __('Room') }}
                 </flux:table.column>
-                <flux:table.column sortable :sorted="$sortBy === 'library'" :direction="$sortDirection" wire:click="sort('library')">
+                <flux:table.column sortable :sorted="$sortBy === 'library'" :direction="$sortDirection"
+                    wire:click="sort('library')">
                     {{ __('Library') }}
                 </flux:table.column>
                 <flux:table.column>{{ __('Details') }}</flux:table.column>
-                <flux:table.column sortable :sorted="$sortBy === 'seats_count'" :direction="$sortDirection" wire:click="sort('seats_count')">
+                <flux:table.column sortable :sorted="$sortBy === 'seats_count'" :direction="$sortDirection"
+                    wire:click="sort('seats_count')">
                     {{ __('Seats') }}
                 </flux:table.column>
-                <flux:table.column sortable :sorted="$sortBy === 'created_at'" :direction="$sortDirection" wire:click="sort('created_at')">
+                <flux:table.column sortable :sorted="$sortBy === 'created_at'" :direction="$sortDirection"
+                    wire:click="sort('created_at')">
                     {{ __('Created') }}
                 </flux:table.column>
                 <flux:table.column align="end">{{ __('Actions') }}</flux:table.column>
@@ -458,7 +439,8 @@ new class extends Component {
                             <div class="flex justify-end gap-2">
                                 @if (auth()->user()->can('view_seat'))
                                     <flux:modal.trigger name="seat-overview-modal">
-                                        <flux:button size="sm" variant="outline" wire:click="openSeatOverview('{{ $room->id }}')">
+                                        <flux:button size="sm" variant="outline"
+                                            wire:click="openSeatOverview('{{ $room->id }}')">
                                             {{ __('View Seats') }}
                                         </flux:button>
                                     </flux:modal.trigger>
@@ -473,12 +455,9 @@ new class extends Component {
                                 @endif
 
                                 @if (auth()->user()->can('delete_room'))
-                                    <flux:button
-                                        size="sm"
-                                        variant="danger"
+                                    <flux:button size="sm" variant="danger"
                                         wire:confirm="Are you sure you want to delete this room? This action cannot be undone."
-                                        wire:click="deleteRoom('{{ $room->id }}')"
-                                    >
+                                        wire:click="deleteRoom('{{ $room->id }}')">
                                         {{ __('Delete') }}
                                     </flux:button>
                                 @endif
@@ -488,7 +467,8 @@ new class extends Component {
                 @empty
                     <flux:table.row>
                         <flux:table.cell colspan="6">
-                            <flux:text>{{ __('No rooms found yet. Create your first room to get started.') }}</flux:text>
+                            <flux:text>{{ __('No rooms found yet. Create your first room to get started.') }}
+                            </flux:text>
                         </flux:table.cell>
                     </flux:table.row>
                 @endforelse
@@ -499,7 +479,8 @@ new class extends Component {
     <flux:modal name="create-room-modal" focusable class="w-full max-w-2xl">
         <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
             <div>
-                <flux:heading size="lg">{{ $editingId ? __('Update Room') : __('Create New Room') }}</flux:heading>
+                <flux:heading size="lg">{{ $editingId ? __('Update Room') : __('Create New Room') }}
+                </flux:heading>
                 <flux:text class="mt-1 text-sm text-zinc-500">
                     {{ __('Add a room to a library, choose its type, and keep status details consistent across your setup.') }}
                 </flux:text>
@@ -550,12 +531,14 @@ new class extends Component {
 
                         <div>
                             <flux:text class="text-sm">{{ __('WiFi') }}</flux:text>
-                            <flux:heading size="sm">{{ $has_wifi ? __('Available') : __('Not Available') }}</flux:heading>
+                            <flux:heading size="sm">{{ $has_wifi ? __('Available') : __('Not Available') }}
+                            </flux:heading>
                         </div>
 
                         <div>
                             <flux:text class="text-sm">{{ __('Status') }}</flux:text>
-                            <flux:heading size="sm">{{ $is_active ? __('Active') : __('Inactive') }}</flux:heading>
+                            <flux:heading size="sm">{{ $is_active ? __('Active') : __('Inactive') }}
+                            </flux:heading>
                         </div>
                     </div>
                 </div>
@@ -594,22 +577,26 @@ new class extends Component {
                 <div class="grid gap-4 md:grid-cols-4">
                     <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
                         <flux:text class="text-sm text-zinc-500">{{ __('Room') }}</flux:text>
-                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->name }}</flux:heading>
+                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->name }}
+                        </flux:heading>
                     </div>
 
                     <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
                         <flux:text class="text-sm text-zinc-500">{{ __('Library') }}</flux:text>
-                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->library?->name }}</flux:heading>
+                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->library?->name }}
+                        </flux:heading>
                     </div>
 
                     <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
                         <flux:text class="text-sm text-zinc-500">{{ __('Type') }}</flux:text>
-                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->type }}</flux:heading>
+                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->type }}
+                        </flux:heading>
                     </div>
 
                     <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
                         <flux:text class="text-sm text-zinc-500">{{ __('Total Seats') }}</flux:text>
-                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->seats_count }}</flux:heading>
+                        <flux:heading size="sm" class="mt-2">{{ $this->seatOverviewRoom->seats_count }}
+                        </flux:heading>
                     </div>
                 </div>
 
