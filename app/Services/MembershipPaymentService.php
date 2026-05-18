@@ -8,7 +8,7 @@ use Illuminate\Support\Carbon;
 
 class MembershipPaymentService
 {
-    public function recordCashPayment(Membership $membership, ?Carbon $paidAt = null): Payment
+    public function recordCashPayment(Membership $membership, $paidAt = null): Payment
     {
         $existingPayment = $membership->payments()
             ->successful()
