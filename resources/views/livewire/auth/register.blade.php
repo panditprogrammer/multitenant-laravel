@@ -9,63 +9,28 @@
             @csrf
 
 
-            {{-- select student ,teacher or owner  --}}
-            <flux:select
-                name="role"
-                :label="__('Register as')"
-                required
-                :placeholder="__('Select a role')"
-            >
-            <flux:select.option value="student">{{ __('Student') }}</flux:select.option>
-            <flux:select.option value="teacher">{{ __('Teacher') }}</flux:select.option>
-            <flux:select.option value="owner">{{ __('Owner') }}</flux:select.option>
+            {{-- student, library owner role tab selection  --}}
+            <flux:radio.group wire:model="role" variant="segmented" label="Register as">
+                <flux:radio name="role" checked value="student" label="Student" icon="user" />
+                <flux:radio name="role" value="owner" label="Library Owner" icon="building-office" />
+            </flux:radio.group>
 
-            </flux:select>
 
             <!-- Name -->
-            <flux:input
-                name="name"
-                :label="__('Name')"
-                :value="old('name')"
-                type="text"
-                required
-                autofocus
-                autocomplete="name"
-                :placeholder="__('Full name')"
-            />
+            <flux:input name="name" :label="__('Name')" :value="old('name')" type="text" required autofocus
+                autocomplete="name" :placeholder="__('Full name')" />
 
             <!-- Email Address -->
-            <flux:input
-                name="email"
-                :label="__('Email address')"
-                :value="old('email')"
-                type="email"
-                required
-                autocomplete="email"
-                placeholder="email@example.com"
-            />
+            <flux:input name="email" :label="__('Email address')" :value="old('email')" type="email" required
+                autocomplete="email" placeholder="email@example.com" />
 
             <!-- Password -->
-            <flux:input
-                name="password"
-                :label="__('Password')"
-                type="password"
-                required
-                autocomplete="new-password"
-                :placeholder="__('Password')"
-                viewable
-            />
+            <flux:input name="password" :label="__('Password')" type="password" required autocomplete="new-password"
+                :placeholder="__('Password')" viewable />
 
             <!-- Confirm Password -->
-            <flux:input
-                name="password_confirmation"
-                :label="__('Confirm password')"
-                type="password"
-                required
-                autocomplete="new-password"
-                :placeholder="__('Confirm password')"
-                viewable
-            />
+            <flux:input name="password_confirmation" :label="__('Confirm password')" type="password" required
+                autocomplete="new-password" :placeholder="__('Confirm password')" viewable />
 
             <div class="flex items-center justify-end">
                 <flux:button type="submit" variant="primary" class="w-full" data-test="register-user-button">

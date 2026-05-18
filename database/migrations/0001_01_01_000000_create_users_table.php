@@ -17,7 +17,6 @@ return new class extends Migration
             $table->string('email')->unique();
             $table->timestamp('email_verified_at')->nullable();
             $table->string('password');
-            $table->enum('role', ['owner', 'student']); // 🔥 important
             $table->foreignId('library_id')->nullable(); // student belongs to library
             $table->string('profile_image')->nullable();
             $table->boolean('status')->default(true)->comment('1: active, 0: inactive'); // active/inactive
