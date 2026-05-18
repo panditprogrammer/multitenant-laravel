@@ -29,6 +29,9 @@ new class extends Component {
     public $student_email = '';
     public $student_password = '';
     public $student_profile_image = null;
+    public $admission_mode = 'new';
+    public $existing_student_search = '';
+    public $existing_student_id = '';
 
     public $form_library_id = '';
     public $form_room_id = '';
@@ -51,6 +54,18 @@ new class extends Component {
     protected function authorizePermission(string $permission): void
     {
         abort_unless(auth()->user()->can($permission), 403);
+    }
+
+    protected function selectedExistingStudentRecord(): ?User
+    {
+        if (!$this->existing_student_id) {
+            return null;
+        }
+
+        return User::query()
+            ->where('role', 'student')
+            ->whereNull('library_id')
+            ->find($this->existing_student_id);
     }
 
     public function startCreate()
@@ -123,6 +138,25 @@ new class extends Component {
         return Shift::where('library_id', $this->form_library_id)
             ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->orderBy('name')
+            ->get();
+    }
+
+    #[Computed]
+    public function unassignedRegisteredStudents()
+    {
+        return User::query()
+            ->where('role', 'student')
+            ->whereNull('library_id')
+            ->when($this->existing_student_search, function ($query) {
+                $search = trim($this->existing_student_search);
+
+                $query->where(function ($studentQuery) use ($search) {
+                    $studentQuery->where('name', 'like', '%' . $search . '%')
+                        ->orWhere('email', 'like', '%' . $search . '%');
+                });
+            })
+            ->orderBy('name')
+            ->limit(8)
             ->get();
     }
 
@@ -295,6 +329,36 @@ new class extends Component {
         $this->form_seat_id = '';
     }
 
+    public function updatedAdmissionMode()
+    {
+        $this->existing_student_search = '';
+        $this->existing_student_id = '';
+        $this->student_name = '';
+        $this->student_email = '';
+        $this->student_password = '';
+        $this->student_profile_image = null;
+        $this->resetErrorBag();
+        $this->resetValidation();
+    }
+
+    public function selectExistingStudent($studentId)
+    {
+        $this->authorizePermission('create_student');
+
+        $student = User::query()
+            ->where('role', 'student')
+            ->whereNull('library_id')
+            ->findOrFail($studentId);
+
+        $this->existing_student_id = (string) $student->id;
+        $this->student_name = $student->name;
+        $this->student_email = $student->email;
+        $this->student_password = '';
+        $this->student_profile_image = null;
+        $this->resetErrorBag();
+        $this->resetValidation();
+    }
+
     public function calculatePrice()
     {
         $room = Room::with('library')
@@ -327,10 +391,20 @@ new class extends Component {
         $this->authorizePermission('create_student');
 
         $this->validate([
+            'admission_mode' => ['required', Rule::in(['new', 'existing'])],
+            'existing_student_id' => [$this->admission_mode === 'existing' ? 'required' : 'nullable', Rule::exists('users', 'id')->where(fn ($query) => $query->where('role', 'student')->whereNull('library_id'))],
             'student_name' => 'required|min:2',
-            'student_email' => 'required|email|unique:users,email',
-            'student_password' => 'nullable|min:8',
-            'student_profile_image' => 'nullable|file|image|max:2048',
+            'student_email' => [
+                'required',
+                'email',
+                $this->admission_mode === 'new'
+                    ? Rule::unique('users', 'email')
+                    : Rule::unique('users', 'email')->ignore($this->existing_student_id),
+            ],
+            'student_password' => [$this->admission_mode === 'new' ? 'nullable' : 'nullable', 'min:8'],
+            'student_profile_image' => $this->admission_mode === 'new'
+                ? 'nullable|file|image|max:2048'
+                : 'nullable',
             'form_library_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', $this->ownerId()))],
             'form_room_id' => ['required', Rule::exists('rooms', 'id')->where(fn ($query) => $query->where('library_id', $this->form_library_id))],
             'form_seat_id' => ['required', Rule::exists('seats', 'id')->where(fn ($query) => $query->where('room_id', $this->form_room_id))],
@@ -359,18 +433,31 @@ new class extends Component {
         }
 
         DB::transaction(function () {
-            $imagePath = $this->student_profile_image
-                ? $this->student_profile_image->store('students', 'public')
-                : null;
+            if ($this->admission_mode === 'existing') {
+                $student = User::query()
+                    ->where('role', 'student')
+                    ->whereNull('library_id')
+                    ->findOrFail($this->existing_student_id);
 
-            $student = User::create([
-                'name' => $this->student_name,
-                'email' => $this->student_email,
-                'password' => Hash::make($this->student_password ?: '12345678'),
-                'profile_image' => $imagePath,
-                'role' => 'student',
-                'library_id' => $this->form_library_id,
-            ]);
+                $student->update([
+                    'name' => $this->student_name,
+                    'email' => $this->student_email,
+                    'library_id' => $this->form_library_id,
+                ]);
+            } else {
+                $imagePath = $this->student_profile_image
+                    ? $this->student_profile_image->store('students', 'public')
+                    : null;
+
+                $student = User::create([
+                    'name' => $this->student_name,
+                    'email' => $this->student_email,
+                    'password' => Hash::make($this->student_password ?: '12345678'),
+                    'profile_image' => $imagePath,
+                    'role' => 'student',
+                    'library_id' => $this->form_library_id,
+                ]);
+            }
 
             $membership = Membership::create([
                 'library_id' => $this->form_library_id,
@@ -555,6 +642,9 @@ new class extends Component {
             'student_email',
             'student_password',
             'student_profile_image',
+            'admission_mode',
+            'existing_student_search',
+            'existing_student_id',
             'form_library_id',
             'form_room_id',
             'form_seat_id',
@@ -563,6 +653,7 @@ new class extends Component {
         ]);
 
         $this->amount = 0;
+        $this->admission_mode = 'new';
         $this->resetErrorBag();
         $this->resetValidation();
     }
@@ -781,35 +872,91 @@ new class extends Component {
             <div>
                 <flux:heading size="lg">{{ __('Create Student Admission') }}</flux:heading>
                 <flux:text class="mt-1 text-sm text-zinc-500">
-                    {{ __('Add the student details, assign a room, select shifts, and allot an available seat in one flow.') }}
+                    {{ __('Create a new student or link an existing registered student, then assign room, shifts, and seat in one flow.') }}
                 </flux:text>
             </div>
 
             <form wire:submit="saveStudent" class="space-y-6">
+                <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
+                    <flux:heading size="sm">{{ __('Admission Type') }}</flux:heading>
+                    <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Choose whether to admit a brand new student or attach a registered student who is not assigned to any library yet.') }}</flux:text>
+
+                    <div class="mt-4 grid gap-3 md:grid-cols-2">
+                        <label class="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                            <input type="radio" wire:model.live="admission_mode" value="new">
+                            <span>{{ __('Create New Student') }}</span>
+                        </label>
+                        <label class="flex items-center gap-3 rounded-xl border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-700 dark:bg-zinc-900">
+                            <input type="radio" wire:model.live="admission_mode" value="existing">
+                            <span>{{ __('Select Existing Registered Student') }}</span>
+                        </label>
+                    </div>
+                </div>
+
+                @if ($admission_mode === 'existing')
+                    <div class="rounded-xl border border-zinc-200 p-4 dark:border-zinc-700">
+                        <flux:heading size="sm">{{ __('Find Registered Student') }}</flux:heading>
+                        <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Search students who already registered themselves but are not attached to any library yet.') }}</flux:text>
+
+                        <div class="mt-4">
+                            <flux:input wire:model.live.debounce.300ms="existing_student_search" label="Search Student" placeholder="Search by name or email" />
+                        </div>
+
+                        <div class="mt-4 space-y-3">
+                            @forelse ($this->unassignedRegisteredStudents as $registeredStudent)
+                                <button
+                                    type="button"
+                                    wire:click="selectExistingStudent('{{ $registeredStudent->id }}')"
+                                    class="flex w-full items-center justify-between rounded-xl border px-4 py-3 text-left text-sm transition {{ $existing_student_id == $registeredStudent->id ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-900' }}"
+                                >
+                                    <div>
+                                        <div class="font-medium">{{ $registeredStudent->name }}</div>
+                                        <div class="text-zinc-500">{{ $registeredStudent->email }}</div>
+                                    </div>
+                                    @if ($existing_student_id == $registeredStudent->id)
+                                        <span class="text-xs font-medium text-blue-600">{{ __('Selected') }}</span>
+                                    @endif
+                                </button>
+                            @empty
+                                <flux:text class="text-sm text-zinc-500">{{ __('No unassigned registered students found for the current search.') }}</flux:text>
+                            @endforelse
+                        </div>
+                    </div>
+                @endif
+
                 <div class="grid gap-4 md:grid-cols-2">
                     <flux:input wire:model="student_name" label="Student Name" required />
                     <flux:input type="email" wire:model="student_email" label="Email" required />
                 </div>
 
-                <div class="grid gap-4 md:grid-cols-2">
-                    <flux:input type="password" wire:model="student_password" label="Password (optional)" viewable />
-                    <div class="rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
-                        <div class="flex items-start justify-between gap-4">
-                            <div>
-                                <flux:heading size="sm">{{ __('Profile Image') }}</flux:heading>
-                                <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Optional student profile photo.') }}</flux:text>
+                @if ($admission_mode === 'new')
+                    <div class="grid gap-4 md:grid-cols-2">
+                        <flux:input type="password" wire:model="student_password" label="Password (optional)" viewable />
+                        <div class="rounded-xl border border-dashed border-zinc-300 p-4 dark:border-zinc-700">
+                            <div class="flex items-start justify-between gap-4">
+                                <div>
+                                    <flux:heading size="sm">{{ __('Profile Image') }}</flux:heading>
+                                    <flux:text class="mt-1 text-sm text-zinc-500">{{ __('Optional student profile photo.') }}</flux:text>
+                                </div>
+
+                                @if ($student_profile_image)
+                                    <img src="{{ $student_profile_image->temporaryUrl() }}" class="h-16 w-16 rounded-xl object-cover">
+                                @endif
                             </div>
 
-                            @if ($student_profile_image)
-                                <img src="{{ $student_profile_image->temporaryUrl() }}" class="h-16 w-16 rounded-xl object-cover">
-                            @endif
-                        </div>
-
-                        <div class="mt-4">
-                            <input type="file" wire:model="student_profile_image" />
+                            <div class="mt-4">
+                                <input type="file" wire:model="student_profile_image" />
+                            </div>
                         </div>
                     </div>
-                </div>
+                @else
+                    @if ($existing_student_id)
+                        <div class="rounded-xl border border-dashed border-zinc-300 p-4 text-sm dark:border-zinc-700">
+                            <div class="font-medium">{{ __('Selected Registered Student') }}</div>
+                            <div class="mt-2 text-zinc-500">{{ $student_name }} {{ $student_email ? '(' . $student_email . ')' : '' }}</div>
+                        </div>
+                    @endif
+                @endif
 
                 <div class="grid gap-4 md:grid-cols-3">
                     <flux:select wire:model.live="form_library_id" label="Library" required>

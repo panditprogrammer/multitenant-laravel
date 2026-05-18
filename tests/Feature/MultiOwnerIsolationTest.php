@@ -4,6 +4,7 @@ use App\Models\Library;
 use App\Models\Membership;
 use App\Models\Room;
 use App\Models\Seat;
+use App\Models\Shift;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
@@ -85,4 +86,63 @@ test('owner student detail modal does not show memberships from another owner li
         ->assertSee('A-1')
         ->assertDontSee('Beta Library')
         ->assertDontSee('B-9');
+});
+
+test('owner can admit an existing registered student who is not assigned to any library', function () {
+    $owner = User::factory()->create(['role' => 'owner']);
+    $registeredStudent = User::factory()->create([
+        'role' => 'student',
+        'library_id' => null,
+        'email' => 'registered-student@example.com',
+    ]);
+
+    $library = Library::create([
+        'user_id' => $owner->id,
+        'name' => 'Gamma Library',
+        'city' => 'Indore',
+        'normal_price' => 1000,
+        'ac_price' => 1500,
+    ]);
+
+    $room = Room::create([
+        'library_id' => $library->id,
+        'name' => 'Main Hall',
+        'type' => 'AC',
+    ]);
+
+    $seat = Seat::create([
+        'room_id' => $room->id,
+        'seat_number' => 'G-4',
+    ]);
+
+    $shift = Shift::create([
+        'library_id' => $library->id,
+        'name' => 'Morning',
+        'start_time' => '06:00',
+        'end_time' => '10:00',
+    ]);
+
+    $this->actingAs($owner);
+
+    Livewire::test('library::student.manage')
+        ->set('admission_mode', 'existing')
+        ->call('selectExistingStudent', (string) $registeredStudent->id)
+        ->set('form_library_id', (string) $library->id)
+        ->set('form_room_id', (string) $room->id)
+        ->set('form_shift_ids', [(string) $shift->id])
+        ->set('form_seat_id', (string) $seat->id)
+        ->set('amount', 1500)
+        ->call('saveStudent')
+        ->assertHasNoErrors();
+
+    $registeredStudent->refresh();
+
+    expect($registeredStudent->library_id)->toBe($library->id);
+    expect(User::query()->where('email', 'registered-student@example.com')->count())->toBe(1);
+
+    $membership = Membership::query()->where('user_id', $registeredStudent->id)->first();
+
+    expect($membership)->not->toBeNull();
+    expect($membership->library_id)->toBe($library->id);
+    expect($membership->seat_id)->toBe($seat->id);
 });
