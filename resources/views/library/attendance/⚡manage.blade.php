@@ -18,6 +18,11 @@ new class extends Component {
 
     public string $month = '';
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
     public function mount(): void
     {
         $this->month = now()->format('Y-m');
@@ -48,7 +53,7 @@ new class extends Component {
     public function libraries()
     {
         return Library::query()
-            ->where('user_id', auth()->id())
+            ->where('user_id', $this->ownerId())
             ->orderBy('name')
             ->get();
     }
@@ -57,7 +62,7 @@ new class extends Component {
     public function rooms()
     {
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->orderBy('name')
             ->get();
@@ -67,7 +72,7 @@ new class extends Component {
     public function seats()
     {
         return Seat::query()
-            ->whereHas('room.library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('room.library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->when($this->filter_library_id, fn ($query) => $query->whereHas('room', fn ($roomQuery) => $roomQuery->where('library_id', $this->filter_library_id)))
             ->when($this->filter_room_id, fn ($query) => $query->where('room_id', $this->filter_room_id))
             ->orderBy('seat_number')
@@ -81,7 +86,7 @@ new class extends Component {
         $monthEnd = $monthStart->copy()->endOfMonth();
 
         $memberships = Membership::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with([
                 'user',
                 'library',
@@ -145,7 +150,7 @@ new class extends Component {
             'rooms' => $this->seatAttendance->pluck('room_id')->filter()->unique()->count(),
             'seats' => $this->seatAttendance->count(),
             'marked_today' => Attendance::query()
-                ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+                ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
                 ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
                 ->when($this->filter_room_id, fn ($query) => $query->where('room_id', $this->filter_room_id))
                 ->when($this->filter_seat_id, fn ($query) => $query->where('seat_id', $this->filter_seat_id))

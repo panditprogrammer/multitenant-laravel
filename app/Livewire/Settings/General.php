@@ -19,7 +19,7 @@ class General extends Component
 
     public function mount(): void
     {
-        abort_unless(Auth::user()?->role === 'owner', 403);
+        abort_unless(Auth::user()?->role === 'owner' && is_null(Auth::user()?->owner_id), 403);
 
         $user = Auth::user();
 
@@ -30,7 +30,7 @@ class General extends Component
 
     public function save(): void
     {
-        abort_unless(Auth::user()?->role === 'owner', 403);
+        abort_unless(Auth::user()?->role === 'owner' && is_null(Auth::user()?->owner_id), 403);
 
         $validated = $this->validate([
             'razorpay_key_id' => ['required', 'string', 'max:255'],

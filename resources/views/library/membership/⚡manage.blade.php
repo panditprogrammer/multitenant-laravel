@@ -29,6 +29,16 @@ new class extends Component {
     public $sortBy = 'start_date';
     public $sortDirection = 'desc';
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
+    protected function authorizePermission(string $permission): void
+    {
+        abort_unless(auth()->user()->can($permission), 403);
+    }
+
     public function mount($library = null)
     {
         if ($library && (string) $library !== '0') {
@@ -55,7 +65,7 @@ new class extends Component {
     #[Computed]
     public function libraries()
     {
-        return Library::where('user_id', auth()->id())
+        return Library::where('user_id', $this->ownerId())
             ->withCount(['students', 'rooms', 'shifts'])
             ->orderBy('name')
             ->get();
@@ -65,7 +75,7 @@ new class extends Component {
     public function memberships()
     {
         return Membership::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['user', 'seat.room', 'library', 'shifts', 'latestPayment'])
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->when($this->filter_status, fn ($query) => $query->where('status', $this->filter_status))
@@ -104,7 +114,7 @@ new class extends Component {
     public function membershipStats()
     {
         $memberships = Membership::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->get();
 
         return [
@@ -132,8 +142,10 @@ new class extends Component {
 
     public function edit($id)
     {
+        $this->authorizePermission('edit_membership');
+
         $membership = Membership::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['user', 'seat.room', 'library', 'shifts'])
             ->findOrFail($id);
 
@@ -151,6 +163,8 @@ new class extends Component {
 
     public function saveMembership()
     {
+        $this->authorizePermission('edit_membership');
+
         $this->validate([
             'start_date' => 'required|date',
             'end_date' => 'required|date|after_or_equal:start_date',
@@ -160,7 +174,7 @@ new class extends Component {
         ]);
 
         $membership = Membership::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($this->editingMembershipId);
 
         $membership->update([
@@ -363,11 +377,13 @@ new class extends Component {
                         </flux:table.cell>
 
                         <flux:table.cell align="end">
-                            <flux:modal.trigger name="membership-manage-modal">
-                                <flux:button size="sm" wire:click="edit('{{ $membership->id }}')">
-                                    {{ __('Manage') }}
-                                </flux:button>
-                            </flux:modal.trigger>
+                            @if (auth()->user()->can('edit_membership'))
+                                <flux:modal.trigger name="membership-manage-modal">
+                                    <flux:button size="sm" wire:click="edit('{{ $membership->id }}')">
+                                        {{ __('Manage') }}
+                                    </flux:button>
+                                </flux:modal.trigger>
+                            @endif
                         </flux:table.cell>
                     </flux:table.row>
                 @empty

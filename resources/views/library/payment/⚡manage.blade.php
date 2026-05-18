@@ -18,6 +18,11 @@ new class extends Component {
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
     public function sort($column)
     {
         if ($this->sortBy === $column) {
@@ -34,7 +39,7 @@ new class extends Component {
     public function libraries()
     {
         return Library::query()
-            ->where('user_id', auth()->id())
+            ->where('user_id', $this->ownerId())
             ->orderBy('name')
             ->get();
     }
@@ -43,7 +48,7 @@ new class extends Component {
     public function payments()
     {
         return Payment::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['user', 'library', 'membership.seat.room'])
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->when($this->filter_status, fn ($query) => $query->where('status', $this->filter_status))
@@ -89,7 +94,7 @@ new class extends Component {
     public function paymentStats()
     {
         $payments = Payment::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->get();
 
         return [

@@ -12,10 +12,15 @@ new class extends Component {
     public $expiringMemberships;
     public $stats = [];
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
     public function mount()
     {
         $this->libraries = Library::query()
-            ->where('user_id', auth()->id())
+            ->where('user_id', $this->ownerId())
             ->withCount(['rooms', 'students', 'seats', 'shifts'])
             ->latest()
             ->get();
@@ -349,18 +354,31 @@ new class extends Component {
                     <flux:heading size="lg">{{ __('Quick Actions') }}</flux:heading>
 
                     <div class="mt-4 space-y-3">
-                        <flux:button class="w-full justify-center" :href="route('library.create')" wire:navigate>
-                            {{ __('Create Library') }}
-                        </flux:button>
-                        <flux:button class="w-full justify-center" variant="outline" :href="route('room.manage')" wire:navigate>
-                            {{ __('Manage Rooms') }}
-                        </flux:button>
-                        <flux:button class="w-full justify-center" variant="outline" :href="route('student.manage')" wire:navigate>
-                            {{ __('Create Student') }}
-                        </flux:button>
-                        <flux:button class="w-full justify-center" variant="outline" :href="route('student.manage')" wire:navigate>
-                            {{ __('Manage Students') }}
-                        </flux:button>
+                        @if (auth()->user()->can('view_library'))
+                            <flux:button class="w-full justify-center" :href="route('library.create')" wire:navigate>
+                                {{ __('Libraries') }}
+                            </flux:button>
+                        @endif
+                        @if (auth()->user()->can('view_room'))
+                            <flux:button class="w-full justify-center" variant="outline" :href="route('room.manage')" wire:navigate>
+                                {{ __('Manage Rooms') }}
+                            </flux:button>
+                        @endif
+                        @if (auth()->user()->can('view_student'))
+                            <flux:button class="w-full justify-center" variant="outline" :href="route('student.manage')" wire:navigate>
+                                {{ __('Manage Students') }}
+                            </flux:button>
+                        @endif
+                        @if (auth()->user()->can('view_membership'))
+                            <flux:button class="w-full justify-center" variant="outline" :href="route('membership.manage', 0)" wire:navigate>
+                                {{ __('Manage Memberships') }}
+                            </flux:button>
+                        @endif
+                        @if (auth()->user()->can('view_payment'))
+                            <flux:button class="w-full justify-center" variant="outline" :href="route('payment.manage')" wire:navigate>
+                                {{ __('Payments') }}
+                            </flux:button>
+                        @endif
                     </div>
                 </div>
             </div>

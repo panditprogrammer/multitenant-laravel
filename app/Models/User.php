@@ -3,6 +3,7 @@
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Support\PermissionRegistry;
 use Database\Factories\UserFactory;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Attributes\Hidden;
@@ -12,13 +13,14 @@ use Illuminate\Notifications\Notifiable;
 use Illuminate\Support\Str;
 use Laravel\Fortify\TwoFactorAuthenticatable;
 use Laravel\Sanctum\HasApiTokens;
+use Spatie\Permission\Traits\HasRoles;
 
-#[Fillable(['name', 'email', 'password', 'profile_image', 'role', 'library_id', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret'])]
+#[Fillable(['name', 'email', 'password', 'profile_image', 'role', 'library_id', 'owner_id', 'razorpay_key_id', 'razorpay_key_secret', 'razorpay_webhook_secret'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token', 'razorpay_key_secret', 'razorpay_webhook_secret'])]
 class User extends Authenticatable
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, TwoFactorAuthenticatable, HasApiTokens;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable, TwoFactorAuthenticatable;
 
     /**
      * Get the attributes that should be cast.
@@ -83,5 +85,39 @@ class User extends Authenticatable
     public function attendances()
     {
         return $this->hasMany(Attendance::class);
+    }
+
+    public function ownerAccount()
+    {
+        return $this->belongsTo(self::class, 'owner_id');
+    }
+
+    public function managedUsers()
+    {
+        return $this->hasMany(self::class, 'owner_id');
+    }
+
+    public function ownerAccountId(): int
+    {
+        return (int) ($this->owner_id ?: $this->id);
+    }
+
+    public function isStudent(): bool
+    {
+        return $this->role === 'student' || $this->hasRole('student');
+    }
+
+    public function canAccessOwnerPanel(): bool
+    {
+        if ($this->isStudent()) {
+            return false;
+        }
+
+        if ($this->hasRole('owner')) {
+            return true;
+        }
+
+        return true;
+
     }
 }

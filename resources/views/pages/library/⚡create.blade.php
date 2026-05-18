@@ -35,8 +35,19 @@ new class extends Component {
     public $shift_count = 1;
     public $shifts = [];
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
+    protected function authorizePermission(string $permission): void
+    {
+        abort_unless(auth()->user()->can($permission), 403);
+    }
+
     public function startCreate()
     {
+        $this->authorizePermission('edit_library');
         $this->resetForm();
     }
 
@@ -53,7 +64,7 @@ new class extends Component {
     #[Computed]
     public function libraries()
     {
-        return Library::where('user_id', auth()->id())
+        return Library::where('user_id', $this->ownerId())
             ->withCount(['rooms', 'students', 'shifts'])
             ->tap(fn ($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
             ->paginate(5);
@@ -62,7 +73,7 @@ new class extends Component {
     #[Computed]
     public function libraryStats()
     {
-        $libraries = Library::where('user_id', auth()->id())
+        $libraries = Library::where('user_id', $this->ownerId())
             ->withCount(['rooms', 'students', 'shifts'])
             ->get();
 
@@ -76,6 +87,8 @@ new class extends Component {
 
     public function save()
     {
+        $this->authorizePermission('edit_library');
+
         $this->validate([
             'name' => 'required|min:3',
             'email' => 'required|email',
@@ -96,7 +109,7 @@ new class extends Component {
         }
 
         if ($this->editingId) {
-            $library = Library::where('user_id', auth()->id())->findOrFail($this->editingId);
+            $library = Library::where('user_id', $this->ownerId())->findOrFail($this->editingId);
 
             if ($imagePath && $library->profile_image) {
                 Storage::disk('public')->delete($library->profile_image);
@@ -117,7 +130,7 @@ new class extends Component {
             ]);
         } else {
             Library::create([
-                'user_id' => auth()->id(),
+                'user_id' => $this->ownerId(),
                 'name' => $this->name,
                 'email' => $this->email,
                 'phone' => $this->phone,
@@ -138,7 +151,8 @@ new class extends Component {
 
     public function edit($id)
     {
-        $library = Library::where('user_id', auth()->id())->findOrFail($id);
+        $this->authorizePermission('edit_library');
+        $library = Library::where('user_id', $this->ownerId())->findOrFail($id);
 
         $this->editingId = $library->id;
         $this->name = $library->name;
@@ -158,7 +172,8 @@ new class extends Component {
 
     public function delete($id)
     {
-        Library::where('user_id', auth()->id())->findOrFail($id)->delete();
+        $this->authorizePermission('edit_library');
+        Library::where('user_id', $this->ownerId())->findOrFail($id)->delete();
 
         $this->dispatch('success', ['message' => 'Library deleted successfully!']);
     }
@@ -188,7 +203,8 @@ new class extends Component {
 
     public function openShiftModal($libraryId)
     {
-        Library::where('user_id', auth()->id())->findOrFail($libraryId);
+        $this->authorizePermission('view_library_shift');
+        Library::where('user_id', $this->ownerId())->findOrFail($libraryId);
 
         $this->shiftLibraryId = $libraryId;
         $this->shift_count = 1;
@@ -209,7 +225,8 @@ new class extends Component {
 
     public function generateShifts()
     {
-        $library = Library::where('user_id', auth()->id())->find($this->shiftLibraryId);
+        $this->authorizePermission('edit_library_shift');
+        $library = Library::where('user_id', $this->ownerId())->find($this->shiftLibraryId);
         if (!$library) {
             return;
         }
@@ -241,11 +258,13 @@ new class extends Component {
 
     public function saveShifts()
     {
+        $this->authorizePermission('edit_library_shift');
+
         if (!$this->shiftLibraryId) {
             return;
         }
 
-        Library::where('user_id', auth()->id())->findOrFail($this->shiftLibraryId);
+        Library::where('user_id', $this->ownerId())->findOrFail($this->shiftLibraryId);
 
         Shift::where('library_id', $this->shiftLibraryId)->delete();
 
@@ -271,11 +290,13 @@ new class extends Component {
                 <flux:subheading size="lg" class="mb-6">{{ __('Create and manage your libraries') }}</flux:subheading>
             </div>
 
-            <flux:modal.trigger name="create-library-modal">
-                <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-library-modal')">
-                    {{ __('Create New Library') }}
-                </flux:button>
-            </flux:modal.trigger>
+            @if (auth()->user()->can('edit_library'))
+                <flux:modal.trigger name="create-library-modal">
+                    <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-library-modal')">
+                        {{ __('Create New Library') }}
+                    </flux:button>
+                </flux:modal.trigger>
+            @endif
         </div>
 
         <flux:separator variant="subtle" />
@@ -382,26 +403,30 @@ new class extends Component {
 
                         <flux:table.cell align="end">
                             <div class="flex justify-end gap-2">
-                                <flux:modal.trigger name="shift-modal">
-                                    <flux:button size="sm" variant="outline" wire:click="openShiftModal('{{ $library->id }}')">
-                                        {{ __('Shifts') }}
-                                    </flux:button>
-                                </flux:modal.trigger>
+                                @if (auth()->user()->can('view_library_shift'))
+                                    <flux:modal.trigger name="shift-modal">
+                                        <flux:button size="sm" variant="outline" wire:click="openShiftModal('{{ $library->id }}')">
+                                            {{ __('Shifts') }}
+                                        </flux:button>
+                                    </flux:modal.trigger>
+                                @endif
 
-                                <flux:modal.trigger name="create-library-modal">
-                                    <flux:button size="sm" wire:click="edit('{{ $library->id }}')">
-                                        {{ __('Edit') }}
-                                    </flux:button>
-                                </flux:modal.trigger>
+                                @if (auth()->user()->can('edit_library'))
+                                    <flux:modal.trigger name="create-library-modal">
+                                        <flux:button size="sm" wire:click="edit('{{ $library->id }}')">
+                                            {{ __('Edit') }}
+                                        </flux:button>
+                                    </flux:modal.trigger>
 
-                                <flux:button
-                                    size="sm"
-                                    variant="danger"
-                                    wire:confirm="Are you sure you want to delete this library? This action cannot be undone."
-                                    wire:click="delete('{{ $library->id }}')"
-                                >
-                                    {{ __('Delete') }}
-                                </flux:button>
+                                    <flux:button
+                                        size="sm"
+                                        variant="danger"
+                                        wire:confirm="Are you sure you want to delete this library? This action cannot be undone."
+                                        wire:click="delete('{{ $library->id }}')"
+                                    >
+                                        {{ __('Delete') }}
+                                    </flux:button>
+                                @endif
                             </div>
                         </flux:table.cell>
                     </flux:table.row>
@@ -477,15 +502,17 @@ new class extends Component {
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-3">
-                    <flux:button type="button" variant="ghost" wire:click="resetForm">
-                        {{ __('Reset') }}
-                    </flux:button>
+                @if (auth()->user()->can('edit_library'))
+                    <div class="flex justify-end gap-3">
+                        <flux:button type="button" variant="ghost" wire:click="resetForm">
+                            {{ __('Reset') }}
+                        </flux:button>
 
-                    <flux:button type="submit">
-                        {{ $editingId ? __('Update Library') : __('Create Library') }}
-                    </flux:button>
-                </div>
+                        <flux:button type="submit">
+                            {{ $editingId ? __('Update Library') : __('Create Library') }}
+                        </flux:button>
+                    </div>
+                @endif
             </form>
         </div>
     </flux:modal>
@@ -506,11 +533,13 @@ new class extends Component {
                     <option value="3">3 Shifts</option>
                 </flux:select>
 
-                <div class="flex items-end">
-                    <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted" wire:click="generateShifts">
-                        {{ __('Generate') }}
-                    </flux:button>
-                </div>
+                @if (auth()->user()->can('edit_library_shift'))
+                    <div class="flex items-end">
+                        <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted" wire:click="generateShifts">
+                            {{ __('Generate') }}
+                        </flux:button>
+                    </div>
+                @endif
             </div>
 
             @if (count($shifts))
@@ -532,11 +561,13 @@ new class extends Component {
                     </flux:table.rows>
                 </flux:table>
 
-                <div class="flex justify-end">
-                    <flux:button variant="filled" wire:click="saveShifts">
-                        {{ __('Save Shifts') }}
-                    </flux:button>
-                </div>
+                @if (auth()->user()->can('edit_library_shift'))
+                    <div class="flex justify-end">
+                        <flux:button variant="filled" wire:click="saveShifts">
+                            {{ __('Save Shifts') }}
+                        </flux:button>
+                    </div>
+                @endif
             @endif
         </div>
     </flux:modal>

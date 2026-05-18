@@ -31,8 +31,19 @@ new class extends Component {
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
+    protected function authorizePermission(string $permission): void
+    {
+        abort_unless(auth()->user()->can($permission), 403);
+    }
+
     public function startCreate()
     {
+        $this->authorizePermission('create_room');
         $this->resetForm();
     }
 
@@ -51,7 +62,7 @@ new class extends Component {
     #[Computed]
     public function libraries()
     {
-        return Library::where('user_id', auth()->id())
+        return Library::where('user_id', $this->ownerId())
             ->withCount(['rooms', 'students', 'seats'])
             ->orderBy('name')
             ->get();
@@ -61,7 +72,7 @@ new class extends Component {
     public function rooms()
     {
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['library'])
             ->withCount('seats')
             ->tap(function ($query) {
@@ -82,7 +93,7 @@ new class extends Component {
     public function roomOptions()
     {
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with('library')
             ->orderBy('name')
             ->get();
@@ -91,7 +102,7 @@ new class extends Component {
     #[Computed]
     public function roomStats()
     {
-        $rooms = Room::whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+        $rooms = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->get();
 
         return [
@@ -111,7 +122,7 @@ new class extends Component {
         }
 
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['library', 'seats' => fn ($query) => $query->orderBy('seat_number')])
             ->withCount('seats')
             ->find($this->seatOverviewRoomId);
@@ -154,8 +165,10 @@ new class extends Component {
 
     public function saveRoom()
     {
+        $this->authorizePermission($this->editingId ? 'edit_room' : 'create_room');
+
         $this->validate([
-            'lib_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', auth()->id()))],
+            'lib_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', $this->ownerId()))],
             'name' => [
                 'required',
                 'min:2',
@@ -179,7 +192,7 @@ new class extends Component {
         ];
 
         if ($this->editingId) {
-            Room::whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
                 ->findOrFail($this->editingId)
                 ->update($payload);
         } else {
@@ -193,7 +206,8 @@ new class extends Component {
 
     public function editRoom($id)
     {
-        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+        $this->authorizePermission('edit_room');
+        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($id);
 
         $this->editingId = $room->id;
@@ -209,7 +223,8 @@ new class extends Component {
 
     public function deleteRoom($id)
     {
-        Room::whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+        $this->authorizePermission('delete_room');
+        Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($id)
             ->delete();
 
@@ -219,6 +234,8 @@ new class extends Component {
 
     public function generateSeats()
     {
+        $this->authorizePermission('generate_seat');
+
         $this->validate([
             'room_id' => 'required|integer',
             'prefix' => 'required|string|max:2',
@@ -226,7 +243,7 @@ new class extends Component {
             'end' => 'required|integer|gte:start',
         ]);
 
-        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($this->room_id);
 
         for ($i = $this->start; $i <= $this->end; $i++) {
@@ -251,7 +268,8 @@ new class extends Component {
 
     public function openSeatOverview($id)
     {
-        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+        $this->authorizePermission('view_seat');
+        $room = Room::whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($id);
 
         $this->seatOverviewRoomId = $room->id;
@@ -287,11 +305,13 @@ new class extends Component {
                 <flux:subheading size="lg" class="mb-6">{{ __('Create and manage rooms across your libraries') }}</flux:subheading>
             </div>
 
-            <flux:modal.trigger name="create-room-modal">
-                <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-room-modal')">
-                    {{ __('Create New Room') }}
-                </flux:button>
-            </flux:modal.trigger>
+            @if (auth()->user()->can('create_room'))
+                <flux:modal.trigger name="create-room-modal">
+                    <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-room-modal')">
+                        {{ __('Create New Room') }}
+                    </flux:button>
+                </flux:modal.trigger>
+            @endif
         </div>
 
         <flux:separator variant="subtle" />
@@ -329,37 +349,39 @@ new class extends Component {
         </div>
     </div>
 
-    <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
-        <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
-            <div>
-                <flux:heading size="lg">{{ __('Seat Generator') }}</flux:heading>
-                <flux:text class="mt-1 text-sm text-zinc-500">
-                    {{ __('Generate numbered seats for any room using a prefix and range.') }}
-                </flux:text>
+    @if (auth()->user()->can('generate_seat'))
+        <div class="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm dark:border-zinc-700 dark:bg-zinc-900">
+            <div class="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+                <div>
+                    <flux:heading size="lg">{{ __('Seat Generator') }}</flux:heading>
+                    <flux:text class="mt-1 text-sm text-zinc-500">
+                        {{ __('Generate numbered seats for any room using a prefix and range.') }}
+                    </flux:text>
+                </div>
             </div>
+
+            <form wire:submit="generateSeats" class="mt-6 grid gap-4 md:grid-cols-5">
+                <flux:select wire:model="room_id" label="Select Room" required>
+                    <flux:select.option value="">{{ __('Select Room') }}</flux:select.option>
+                    @foreach ($this->roomOptions as $room)
+                        <flux:select.option value="{{ $room->id }}">
+                            {{ $room->name }} - {{ $room->library?->name }}
+                        </flux:select.option>
+                    @endforeach
+                </flux:select>
+
+                <flux:input wire:model="prefix" label="Prefix" maxlength="2" />
+                <flux:input wire:model="start" label="Start" type="number" min="1" />
+                <flux:input wire:model="end" label="End" type="number" min="1" />
+
+                <div class="flex items-end">
+                    <flux:button type="submit" class="w-full">
+                        {{ __('Generate Seats') }}
+                    </flux:button>
+                </div>
+            </form>
         </div>
-
-        <form wire:submit="generateSeats" class="mt-6 grid gap-4 md:grid-cols-5">
-            <flux:select wire:model="room_id" label="Select Room" required>
-                <flux:select.option value="">{{ __('Select Room') }}</flux:select.option>
-                @foreach ($this->roomOptions as $room)
-                    <flux:select.option value="{{ $room->id }}">
-                        {{ $room->name }} - {{ $room->library?->name }}
-                    </flux:select.option>
-                @endforeach
-            </flux:select>
-
-            <flux:input wire:model="prefix" label="Prefix" maxlength="2" />
-            <flux:input wire:model="start" label="Start" type="number" min="1" />
-            <flux:input wire:model="end" label="End" type="number" min="1" />
-
-            <div class="flex items-end">
-                <flux:button type="submit" class="w-full">
-                    {{ __('Generate Seats') }}
-                </flux:button>
-            </div>
-        </form>
-    </div>
+    @endif
 
     <div class="space-y-4">
         <flux:table :paginate="$this->rooms">
@@ -434,26 +456,32 @@ new class extends Component {
 
                         <flux:table.cell align="end">
                             <div class="flex justify-end gap-2">
-                                <flux:modal.trigger name="seat-overview-modal">
-                                    <flux:button size="sm" variant="outline" wire:click="openSeatOverview('{{ $room->id }}')">
-                                        {{ __('View Seats') }}
-                                    </flux:button>
-                                </flux:modal.trigger>
+                                @if (auth()->user()->can('view_seat'))
+                                    <flux:modal.trigger name="seat-overview-modal">
+                                        <flux:button size="sm" variant="outline" wire:click="openSeatOverview('{{ $room->id }}')">
+                                            {{ __('View Seats') }}
+                                        </flux:button>
+                                    </flux:modal.trigger>
+                                @endif
 
-                                <flux:modal.trigger name="create-room-modal">
-                                    <flux:button size="sm" wire:click="editRoom('{{ $room->id }}')">
-                                        {{ __('Edit') }}
-                                    </flux:button>
-                                </flux:modal.trigger>
+                                @if (auth()->user()->can('edit_room'))
+                                    <flux:modal.trigger name="create-room-modal">
+                                        <flux:button size="sm" wire:click="editRoom('{{ $room->id }}')">
+                                            {{ __('Edit') }}
+                                        </flux:button>
+                                    </flux:modal.trigger>
+                                @endif
 
-                                <flux:button
-                                    size="sm"
-                                    variant="danger"
-                                    wire:confirm="Are you sure you want to delete this room? This action cannot be undone."
-                                    wire:click="deleteRoom('{{ $room->id }}')"
-                                >
-                                    {{ __('Delete') }}
-                                </flux:button>
+                                @if (auth()->user()->can('delete_room'))
+                                    <flux:button
+                                        size="sm"
+                                        variant="danger"
+                                        wire:confirm="Are you sure you want to delete this room? This action cannot be undone."
+                                        wire:click="deleteRoom('{{ $room->id }}')"
+                                    >
+                                        {{ __('Delete') }}
+                                    </flux:button>
+                                @endif
                             </div>
                         </flux:table.cell>
                     </flux:table.row>

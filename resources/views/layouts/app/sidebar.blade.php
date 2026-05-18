@@ -16,38 +16,59 @@
         <flux:sidebar.nav>
             <flux:sidebar.group :heading="__('Platform')" class="grid">
                 <flux:sidebar.item icon="home"
-                    :href="auth()->user()->role === 'student' ? route('student.dashboard') : (auth()->user()->role === 'owner' ? route('owner.dashboard') : route('dashboard'))"
+                    :href="auth()->user()->isStudent() ? route('student.dashboard') : route('dashboard')"
                     :current="request()->routeIs('dashboard', 'student.dashboard', 'owner.dashboard')" wire:navigate>
                     {{ __('Dashboard') }}
                 </flux:sidebar.item>
-                @if (auth()->user()->role === 'owner')
+                @if (auth()->user()->can('view_library'))
                     <flux:sidebar.item icon="folder" :href="route('library.create')"
                         :current="request()->routeIs('library.create')" wire:navigate>
-                        {{ __('Create Library') }}
+                        {{ __('Libraries') }}
                     </flux:sidebar.item>
+                @endif
+                @if (auth()->user()->can('view_room'))
                     <flux:sidebar.item icon="folder" :href="route('room.manage')"
                         :current="request()->routeIs('room.manage')" wire:navigate>
                         {{ __('Manage Rooms') }}
                     </flux:sidebar.item>
+                @endif
+                @if (auth()->user()->can('view_student'))
                     <flux:sidebar.item icon="user" :href="route('student.manage')"
                         :current="request()->routeIs('student.manage')" wire:navigate>
                         {{ __('Manage Students') }}
                     </flux:sidebar.item>
+                @endif
+                @if (auth()->user()->can('view_membership'))
                     <flux:sidebar.item icon="user" :href="route('membership.manage', 0)"
                         :current="request()->routeIs('membership.manage')" wire:navigate>
                         {{ __('Manage Memberships') }}
                     </flux:sidebar.item>
+                @endif
+                @if (auth()->user()->can('view_payment'))
                     <flux:sidebar.item icon="folder" :href="route('payment.manage')"
                         :current="request()->routeIs('payment.manage')" wire:navigate>
                         {{ __('Payments') }}
                     </flux:sidebar.item>
+                @endif
+                @if (auth()->user()->can('view_attendance'))
                     <flux:sidebar.item icon="calendar-days" :href="route('owner.attendance')"
                         :current="request()->routeIs('owner.attendance')" wire:navigate>
                         {{ __('Attendance') }}
                     </flux:sidebar.item>
                 @endif
 
-                @if (auth()->user()->role === 'student')
+                @if (auth()->user()->hasRole('owner') && is_null(auth()->user()->owner_id))
+                    <flux:sidebar.item icon="shield-check" :href="route('role.manage')"
+                        :current="request()->routeIs('role.manage')" wire:navigate>
+                        {{ __('Roles') }}
+                    </flux:sidebar.item>
+                    <flux:sidebar.item icon="users" :href="route('user.manage')"
+                        :current="request()->routeIs('user.manage')" wire:navigate>
+                        {{ __('Users') }}
+                    </flux:sidebar.item>
+                @endif
+
+                @if (auth()->user()->isStudent())
                     <flux:sidebar.item icon="folder" :href="route('student.payments')"
                         :current="request()->routeIs('student.payments')" wire:navigate>
                         {{ __('My Payments') }}
@@ -59,7 +80,7 @@
                 @endif
             </flux:sidebar.group>
 
-            @if (auth()->user()->role === 'owner')
+            @if (auth()->user()->hasRole('owner') && is_null(auth()->user()->owner_id))
                 <flux:sidebar.group :heading="__('Global Settings')" class="grid">
                     <flux:sidebar.item icon="cog" :href="route('setup.payment-gateway.edit')"
                         :current="request()->routeIs('setup.payment-gateway.edit')" wire:navigate>
@@ -107,7 +128,7 @@
                 <flux:menu.separator />
 
                 <flux:menu.radio.group>
-                    @if (auth()->user()->role === 'owner')
+                    @if (auth()->user()->hasRole('owner') && is_null(auth()->user()->owner_id))
                         <flux:menu.item :href="route('setup.payment-gateway.edit')" icon="wrench-screwdriver"
                             wire:navigate>
                             {{ __('Setup & Configurations') }}

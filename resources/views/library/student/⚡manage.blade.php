@@ -43,8 +43,19 @@ new class extends Component {
     public $sortBy = 'created_at';
     public $sortDirection = 'desc';
 
+    protected function ownerId(): int
+    {
+        return auth()->user()->ownerAccountId();
+    }
+
+    protected function authorizePermission(string $permission): void
+    {
+        abort_unless(auth()->user()->can($permission), 403);
+    }
+
     public function startCreate()
     {
+        $this->authorizePermission('create_student');
         $this->resetCreateForm();
     }
 
@@ -63,7 +74,7 @@ new class extends Component {
     #[Computed]
     public function libraries()
     {
-        return Library::where('user_id', auth()->id())
+        return Library::where('user_id', $this->ownerId())
             ->withCount(['students', 'rooms', 'shifts'])
             ->orderBy('name')
             ->get();
@@ -73,7 +84,7 @@ new class extends Component {
     public function filterRooms()
     {
         return Room::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->orderBy('name')
             ->get();
@@ -83,7 +94,7 @@ new class extends Component {
     public function filterShifts()
     {
         return Shift::query()
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->when($this->filter_library_id, fn ($query) => $query->where('library_id', $this->filter_library_id))
             ->orderBy('name')
             ->get();
@@ -97,7 +108,7 @@ new class extends Component {
         }
 
         return Room::where('library_id', $this->form_library_id)
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->orderBy('name')
             ->get();
     }
@@ -110,7 +121,7 @@ new class extends Component {
         }
 
         return Shift::where('library_id', $this->form_library_id)
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->orderBy('name')
             ->get();
     }
@@ -159,11 +170,11 @@ new class extends Component {
     {
         return User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with([
                 'library',
                 'memberships' => fn ($query) => $query
-                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))
+                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', $this->ownerId()))
                     ->with(['seat.room', 'shifts'])
                     ->latest('end_date'),
             ])
@@ -201,11 +212,11 @@ new class extends Component {
     {
         $students = User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with([
                 'library',
                 'memberships' => fn ($query) => $query
-                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id())),
+                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', $this->ownerId())),
             ])
             ->get();
 
@@ -237,11 +248,11 @@ new class extends Component {
 
         return User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with([
                 'library',
                 'memberships' => fn ($query) => $query
-                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))
+                    ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', $this->ownerId()))
                     ->with(['seat.room', 'shifts'])
                     ->latest('end_date'),
             ])
@@ -288,7 +299,7 @@ new class extends Component {
     {
         $room = Room::with('library')
             ->where('library_id', $this->form_library_id)
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->find($this->form_room_id);
 
         if (!$room || !$room->library) {
@@ -303,6 +314,7 @@ new class extends Component {
 
     public function recommendSeat()
     {
+        $this->authorizePermission($this->editingId ? 'edit_student' : 'create_student');
         $seat = $this->availableSeats->first(fn ($item) => !$item['occupied'] && $item['is_active']);
 
         if ($seat) {
@@ -312,12 +324,14 @@ new class extends Component {
 
     public function saveStudent()
     {
+        $this->authorizePermission('create_student');
+
         $this->validate([
             'student_name' => 'required|min:2',
             'student_email' => 'required|email|unique:users,email',
             'student_password' => 'nullable|min:8',
             'student_profile_image' => 'nullable|file|image|max:2048',
-            'form_library_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', auth()->id()))],
+            'form_library_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', $this->ownerId()))],
             'form_room_id' => ['required', Rule::exists('rooms', 'id')->where(fn ($query) => $query->where('library_id', $this->form_library_id))],
             'form_seat_id' => ['required', Rule::exists('seats', 'id')->where(fn ($query) => $query->where('room_id', $this->form_room_id))],
             'form_shift_ids' => 'required|array|min:1',
@@ -379,11 +393,13 @@ new class extends Component {
 
     public function edit($id)
     {
+        $this->authorizePermission('edit_student');
+
         $student = User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['memberships' => fn ($query) => $query
-                ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))
+                ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', $this->ownerId()))
                 ->with(['seat.room', 'shifts'])
                 ->latest('end_date')])
             ->findOrFail($id);
@@ -409,12 +425,14 @@ new class extends Component {
 
     public function updateStudent()
     {
+        $this->authorizePermission('edit_student');
+
         $this->validate([
             'student_name' => 'required|min:2',
             'student_email' => ['required', 'email', Rule::unique('users', 'email')->ignore($this->editingId)],
             'student_password' => 'nullable|min:8',
             'student_profile_image' => 'nullable|file|image|max:2048',
-            'form_library_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', auth()->id()))],
+            'form_library_id' => ['required', Rule::exists('libraries', 'id')->where(fn ($query) => $query->where('user_id', $this->ownerId()))],
             'form_room_id' => ['required', Rule::exists('rooms', 'id')->where(fn ($query) => $query->where('library_id', $this->form_library_id))],
             'form_seat_id' => ['required', Rule::exists('seats', 'id')->where(fn ($query) => $query->where('room_id', $this->form_room_id))],
             'form_shift_ids' => 'required|array|min:1',
@@ -424,9 +442,9 @@ new class extends Component {
 
         $student = User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->with(['memberships' => fn ($query) => $query
-                ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', auth()->id()))])
+                ->whereHas('library', fn ($libraryQuery) => $libraryQuery->where('user_id', $this->ownerId()))])
             ->findOrFail($this->editingId);
 
         $conflictingMembership = Membership::where('library_id', $this->form_library_id)
@@ -506,9 +524,11 @@ new class extends Component {
 
     public function delete($id)
     {
+        $this->authorizePermission('delete_student');
+
         User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($id)
             ->delete();
 
@@ -518,9 +538,11 @@ new class extends Component {
 
     public function show($id)
     {
+        $this->authorizePermission('view_student');
+
         User::query()
             ->where('role', 'student')
-            ->whereHas('library', fn ($query) => $query->where('user_id', auth()->id()))
+            ->whereHas('library', fn ($query) => $query->where('user_id', $this->ownerId()))
             ->findOrFail($id);
 
         $this->selectedStudentId = $id;
@@ -576,11 +598,13 @@ new class extends Component {
                 <flux:subheading size="lg" class="mb-6">{{ __('Create admissions and manage students across your libraries') }}</flux:subheading>
             </div>
 
-            <flux:modal.trigger name="create-student-modal">
-                <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-student-modal')">
-                    {{ __('Create Student') }}
-                </flux:button>
-            </flux:modal.trigger>
+            @if (auth()->user()->can('create_student'))
+                <flux:modal.trigger name="create-student-modal">
+                    <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-student-modal')">
+                        {{ __('Create Student') }}
+                    </flux:button>
+                </flux:modal.trigger>
+            @endif
         </div>
 
         <flux:separator variant="subtle" />
@@ -720,20 +744,24 @@ new class extends Component {
                                     </flux:button>
                                 </flux:modal.trigger>
 
-                                <flux:modal.trigger name="edit-student-modal">
-                                    <flux:button size="sm" wire:click="edit('{{ $student->id }}')">
-                                        {{ __('Edit') }}
-                                    </flux:button>
-                                </flux:modal.trigger>
+                                @if (auth()->user()->can('edit_student'))
+                                    <flux:modal.trigger name="edit-student-modal">
+                                        <flux:button size="sm" wire:click="edit('{{ $student->id }}')">
+                                            {{ __('Edit') }}
+                                        </flux:button>
+                                    </flux:modal.trigger>
+                                @endif
 
-                                <flux:button
-                                    size="sm"
-                                    variant="danger"
-                                    wire:confirm="Are you sure you want to delete this student? This action cannot be undone."
-                                    wire:click="delete('{{ $student->id }}')"
-                                >
-                                    {{ __('Delete') }}
-                                </flux:button>
+                                @if (auth()->user()->can('delete_student'))
+                                    <flux:button
+                                        size="sm"
+                                        variant="danger"
+                                        wire:confirm="Are you sure you want to delete this student? This action cannot be undone."
+                                        wire:click="delete('{{ $student->id }}')"
+                                    >
+                                        {{ __('Delete') }}
+                                    </flux:button>
+                                @endif
                             </div>
                         </flux:table.cell>
                     </flux:table.row>
