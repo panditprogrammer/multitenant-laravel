@@ -1,6 +1,7 @@
 <?php
 
 use App\Models\Library;
+use App\Models\Shift;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
@@ -120,4 +121,52 @@ test('owner can update a library and preserve editable time inputs', function ()
 
     expect($library->open_time)->toBe('08:15:00');
     expect($library->close_time)->toBe('23:30:00');
+});
+
+test('generated shifts stay within the library opening and closing time window', function () {
+    $owner = User::factory()->create([
+        'role' => 'owner',
+    ]);
+
+    $library = Library::create([
+        'user_id' => $owner->id,
+        'name' => 'Schedule Library',
+        'email' => 'schedule@example.com',
+        'phone' => '9999999997',
+        'whatsapp' => '9999999997',
+        'state' => 'MP',
+        'city' => 'Indore',
+        'address' => 'Clock Tower',
+        'normal_price' => 1000,
+        'ac_price' => 1500,
+        'open_time' => '06:30:00',
+        'close_time' => '21:15:00',
+    ]);
+
+    $this->actingAs($owner);
+
+    Livewire::test('pages::library.create')
+        ->call('openShiftModal', (string) $library->id)
+        ->set('shift_count', 3)
+        ->call('generateShifts')
+        ->assertSet('shifts.0.start_time', '06:30')
+        ->assertSet('shifts.2.end_time', '21:15')
+        ->assertSet('shifts.0.end_time', '11:25')
+        ->assertSet('shifts.1.start_time', '11:25')
+        ->assertSet('shifts.1.end_time', '16:20')
+        ->assertSet('shifts.2.start_time', '16:20')
+        ->call('saveShifts')
+        ->assertHasNoErrors();
+
+    $savedShifts = Shift::query()
+        ->where('library_id', $library->id)
+        ->orderBy('id')
+        ->get(['start_time', 'end_time'])
+        ->toArray();
+
+    expect($savedShifts)->toBe([
+        ['start_time' => '06:30', 'end_time' => '11:25'],
+        ['start_time' => '11:25', 'end_time' => '16:20'],
+        ['start_time' => '16:20', 'end_time' => '21:15'],
+    ]);
 });

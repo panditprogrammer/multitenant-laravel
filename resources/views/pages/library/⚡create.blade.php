@@ -66,6 +66,15 @@ new class extends Component {
         return Carbon::parse($time)->format('H:i');
     }
 
+    protected function normalizeShiftTime(?string $time): ?string
+    {
+        if (blank($time)) {
+            return null;
+        }
+
+        return Carbon::createFromFormat('H:i', $time)->format('H:i:s');
+    }
+
     public function startCreate()
     {
         $this->authorizePermission('edit_library');
@@ -239,8 +248,8 @@ new class extends Component {
             ->map(
                 fn($shift) => [
                     'name' => $shift->name,
-                    'start_time' => $shift->start_time,
-                    'end_time' => $shift->end_time,
+                    'start_time' => $this->formatTimeForInput((string) $shift->start_time),
+                    'end_time' => $this->formatTimeForInput((string) $shift->end_time),
                 ],
             )
             ->toArray();
@@ -255,27 +264,33 @@ new class extends Component {
         }
 
         $count = min((int) $this->shift_count, 3);
-        $open = strtotime((string) $library->open_time);
-        $close = strtotime((string) $library->close_time);
+        $open = Carbon::createFromFormat('H:i:s', (string) $library->open_time);
+        $close = Carbon::createFromFormat('H:i:s', (string) $library->close_time);
+        $totalMinutes = $open->diffInMinutes($close, false);
 
-        if ($count < 1 || $close <= $open) {
+        if ($count < 1 || $totalMinutes <= 0) {
             return;
         }
 
-        $total = $close - $open;
-        $perShift = $total / $count;
+        $baseMinutesPerShift = intdiv($totalMinutes, $count);
+        $remainingMinutes = $totalMinutes % $count;
 
         $this->shifts = [];
+        $currentStart = $open->copy();
 
         for ($i = 0; $i < $count; $i++) {
-            $start = $open + $i * $perShift;
-            $end = $i === $count - 1 ? $close : $start + $perShift;
+            $segmentMinutes = $baseMinutesPerShift + ($i < $remainingMinutes ? 1 : 0);
+            $currentEnd = $i === $count - 1
+                ? $close->copy()
+                : $currentStart->copy()->addMinutes($segmentMinutes);
 
             $this->shifts[] = [
                 'name' => 'Shift ' . ($i + 1),
-                'start_time' => date('H:i', (int) $start),
-                'end_time' => date('H:i', (int) $end),
+                'start_time' => $currentStart->format('H:i'),
+                'end_time' => $currentEnd->format('H:i'),
             ];
+
+            $currentStart = $currentEnd->copy();
         }
     }
 
@@ -295,8 +310,8 @@ new class extends Component {
             Shift::create([
                 'library_id' => $this->shiftLibraryId,
                 'name' => $shift['name'],
-                'start_time' => $shift['start_time'],
-                'end_time' => $shift['end_time'],
+                'start_time' => $this->normalizeShiftTime($shift['start_time']),
+                'end_time' => $this->normalizeShiftTime($shift['end_time']),
             ]);
         }
 
