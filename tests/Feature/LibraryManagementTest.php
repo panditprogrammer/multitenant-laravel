@@ -3,6 +3,9 @@
 use App\Models\Library;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
+use Livewire\Livewire;
 
 uses(RefreshDatabase::class);
 
@@ -47,4 +50,74 @@ test('owners can view only their own libraries on the library management page', 
     $response->assertSee('Manage Libraries');
     $response->assertSee('Alpha Library');
     $response->assertDontSee('Beta Library');
+});
+
+test('owner can create a library with opening and closing times', function () {
+    Storage::fake('public');
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+    ]);
+
+    $this->actingAs($owner);
+
+    Livewire::test('pages::library.create')
+        ->set('name', 'Sunrise Library')
+        ->set('email', 'sunrise@example.com')
+        ->set('phone', '9999999999')
+        ->set('whatsapp', '9999999999')
+        ->set('state', 'MP')
+        ->set('city', 'Indore')
+        ->set('address', 'MG Road')
+        ->set('normal_price', 1200)
+        ->set('ac_price', 1800)
+        ->set('open_time', '06:30')
+        ->set('close_time', '21:15')
+        ->set('profile_image', UploadedFile::fake()->image('library.jpg'))
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $library = Library::query()->where('name', 'Sunrise Library')->firstOrFail();
+
+    expect($library->open_time)->toBe('06:30:00');
+    expect($library->close_time)->toBe('21:15:00');
+});
+
+test('owner can update a library and preserve editable time inputs', function () {
+    Storage::fake('public');
+
+    $owner = User::factory()->create([
+        'role' => 'owner',
+    ]);
+
+    $library = Library::create([
+        'user_id' => $owner->id,
+        'name' => 'Evening Library',
+        'email' => 'evening@example.com',
+        'phone' => '9999999998',
+        'whatsapp' => '9999999998',
+        'state' => 'MP',
+        'city' => 'Bhopal',
+        'address' => 'Main Road',
+        'normal_price' => 900,
+        'ac_price' => 1400,
+        'open_time' => '07:00:00',
+        'close_time' => '22:00:00',
+    ]);
+
+    $this->actingAs($owner);
+
+    Livewire::test('pages::library.create')
+        ->call('edit', (string) $library->id)
+        ->assertSet('open_time', '07:00')
+        ->assertSet('close_time', '22:00')
+        ->set('open_time', '08:15')
+        ->set('close_time', '23:30')
+        ->call('save')
+        ->assertHasNoErrors();
+
+    $library->refresh();
+
+    expect($library->open_time)->toBe('08:15:00');
+    expect($library->close_time)->toBe('23:30:00');
 });

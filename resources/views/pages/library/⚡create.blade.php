@@ -2,6 +2,7 @@
 
 use App\Models\Library;
 use App\Models\Shift;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Attributes\Computed;
 use Livewire\Component;
@@ -25,6 +26,8 @@ new class extends Component {
     public $profile_image = null;
     public $normal_price = 0;
     public $ac_price = 0;
+    public $open_time = '';
+    public $close_time = '';
 
     public $editingId = null;
 
@@ -43,6 +46,24 @@ new class extends Component {
     protected function authorizePermission(string $permission): void
     {
         abort_unless(auth()->user()->can($permission), 403);
+    }
+
+    protected function normalizeTimeForStorage(?string $time): ?string
+    {
+        if (blank($time)) {
+            return null;
+        }
+
+        return Carbon::createFromFormat('H:i', $time)->format('H:i:s');
+    }
+
+    protected function formatTimeForInput(string|null $time): string
+    {
+        if (blank($time)) {
+            return '';
+        }
+
+        return Carbon::parse($time)->format('H:i');
     }
 
     public function startCreate()
@@ -66,7 +87,7 @@ new class extends Component {
     {
         return Library::where('user_id', $this->ownerId())
             ->withCount(['rooms', 'students', 'shifts'])
-            ->tap(fn ($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
+            ->tap(fn($query) => $this->sortBy ? $query->orderBy($this->sortBy, $this->sortDirection) : $query)
             ->paginate(5);
     }
 
@@ -101,7 +122,12 @@ new class extends Component {
             'profile_image' => $this->editingId ? 'nullable|file|image|max:2048' : 'required|file|image|max:2048',
             'normal_price' => 'required|numeric|min:0',
             'ac_price' => 'required|numeric|min:0',
+            'open_time' => 'required|date_format:H:i',
+            'close_time' => 'required|date_format:H:i|after:open_time',
         ]);
+
+        $openTime = $this->normalizeTimeForStorage($this->open_time);
+        $closeTime = $this->normalizeTimeForStorage($this->close_time);
 
         $imagePath = null;
         if ($this->profile_image) {
@@ -127,6 +153,8 @@ new class extends Component {
                 'profile_image' => $imagePath ?? $library->profile_image,
                 'normal_price' => $this->normal_price,
                 'ac_price' => $this->ac_price,
+                'open_time' => $openTime,
+                'close_time' => $closeTime,
             ]);
         } else {
             Library::create([
@@ -142,6 +170,8 @@ new class extends Component {
                 'profile_image' => $imagePath,
                 'normal_price' => $this->normal_price,
                 'ac_price' => $this->ac_price,
+                'open_time' => $openTime,
+                'close_time' => $closeTime,
             ]);
         }
 
@@ -166,6 +196,8 @@ new class extends Component {
         $this->normal_price = $library->normal_price;
         $this->ac_price = $library->ac_price;
         $this->profile_image = null;
+        $this->open_time = $this->formatTimeForInput($library->open_time);
+        $this->close_time = $this->formatTimeForInput($library->close_time);
         $this->resetErrorBag();
         $this->resetValidation();
     }
@@ -180,23 +212,12 @@ new class extends Component {
 
     public function resetForm()
     {
-        $this->reset([
-            'name',
-            'email',
-            'phone',
-            'whatsapp',
-            'state',
-            'city',
-            'address',
-            'google_map_link',
-            'profile_image',
-            'normal_price',
-            'ac_price',
-            'editingId',
-        ]);
+        $this->reset(['name', 'email', 'phone', 'whatsapp', 'state', 'city', 'address', 'google_map_link', 'profile_image', 'normal_price', 'ac_price', 'editingId', 'open_time', 'close_time']);
 
         $this->normal_price = 0;
         $this->ac_price = 0;
+        $this->open_time = '06:00';
+        $this->close_time = '20:00';
         $this->resetErrorBag();
         $this->resetValidation();
     }
@@ -215,11 +236,13 @@ new class extends Component {
     {
         $this->shifts = Shift::where('library_id', $this->shiftLibraryId)
             ->get()
-            ->map(fn ($shift) => [
-                'name' => $shift->name,
-                'start_time' => $shift->start_time,
-                'end_time' => $shift->end_time,
-            ])
+            ->map(
+                fn($shift) => [
+                    'name' => $shift->name,
+                    'start_time' => $shift->start_time,
+                    'end_time' => $shift->end_time,
+                ],
+            )
             ->toArray();
     }
 
@@ -287,12 +310,14 @@ new class extends Component {
         <div class="flex items-center justify-between">
             <div>
                 <flux:heading size="xl" level="1">{{ __('Manage Libraries') }}</flux:heading>
-                <flux:subheading size="lg" class="mb-6">{{ __('Create and manage your libraries') }}</flux:subheading>
+                <flux:subheading size="lg" class="mb-6">{{ __('Create and manage your libraries') }}
+                </flux:subheading>
             </div>
 
             @if (auth()->user()->can('edit_library'))
                 <flux:modal.trigger name="create-library-modal">
-                    <flux:button wire:click="startCreate" x-data="" x-on:click.prevent="$dispatch('open-modal', 'create-library-modal')">
+                    <flux:button wire:click="startCreate" x-data=""
+                        x-on:click.prevent="$dispatch('open-modal', 'create-library-modal')">
                         {{ __('Create New Library') }}
                     </flux:button>
                 </flux:modal.trigger>
@@ -335,7 +360,8 @@ new class extends Component {
                 <flux:table.column>{{ __('Contacts') }}</flux:table.column>
                 <flux:table.column>{{ __('Pricing') }}</flux:table.column>
                 <flux:table.column>{{ __('Setup') }}</flux:table.column>
-                <flux:table.column sortable :sorted="$sortBy === 'created_at'" :direction="$sortDirection" wire:click="sort('created_at')">
+                <flux:table.column sortable :sorted="$sortBy === 'created_at'" :direction="$sortDirection"
+                    wire:click="sort('created_at')">
                     {{ __('Created') }}
                 </flux:table.column>
                 <flux:table.column align="end">{{ __('Actions') }}</flux:table.column>
@@ -405,7 +431,8 @@ new class extends Component {
                             <div class="flex justify-end gap-2">
                                 @if (auth()->user()->can('view_library_shift'))
                                     <flux:modal.trigger name="shift-modal">
-                                        <flux:button size="sm" variant="outline" wire:click="openShiftModal('{{ $library->id }}')">
+                                        <flux:button size="sm" variant="outline"
+                                            wire:click="openShiftModal('{{ $library->id }}')">
                                             {{ __('Shifts') }}
                                         </flux:button>
                                     </flux:modal.trigger>
@@ -418,12 +445,9 @@ new class extends Component {
                                         </flux:button>
                                     </flux:modal.trigger>
 
-                                    <flux:button
-                                        size="sm"
-                                        variant="danger"
+                                    <flux:button size="sm" variant="danger"
                                         wire:confirm="Are you sure you want to delete this library? This action cannot be undone."
-                                        wire:click="delete('{{ $library->id }}')"
-                                    >
+                                        wire:click="delete('{{ $library->id }}')">
                                         {{ __('Delete') }}
                                     </flux:button>
                                 @endif
@@ -438,7 +462,8 @@ new class extends Component {
     <flux:modal name="create-library-modal" focusable class="w-full max-w-2xl">
         <div class="flex h-full w-full flex-1 flex-col gap-4 rounded-xl">
             <div>
-                <flux:heading size="lg">{{ $editingId ? __('Update Library') : __('Create New Library') }}</flux:heading>
+                <flux:heading size="lg">{{ $editingId ? __('Update Library') : __('Create New Library') }}
+                </flux:heading>
                 <flux:text class="mt-1 text-sm text-zinc-500">
                     {{ __('Add the main library details here. Rooms, students, and shifts can be managed right after this.') }}
                 </flux:text>
@@ -474,7 +499,8 @@ new class extends Component {
                         </div>
 
                         @if ($profile_image)
-                            <img src="{{ $profile_image->temporaryUrl() }}" class="h-20 w-20 rounded-xl object-cover">
+                            <img src="{{ $profile_image->temporaryUrl() }}"
+                                class="h-20 w-20 rounded-xl object-cover">
                         @endif
                     </div>
 
@@ -484,8 +510,17 @@ new class extends Component {
                 </div>
 
                 <div class="grid gap-4 md:grid-cols-2">
-                    <flux:input type="number" step="0.01" min="0" wire:model="normal_price" label="Normal Seat Price (INR)" required />
-                    <flux:input type="number" step="0.01" min="0" wire:model="ac_price" label="AC Seat Price (INR)" required />
+                    <flux:input type="number" step="0.01" min="0" wire:model="normal_price"
+                        label="Normal Seat Price (INR)" required />
+                    <flux:input type="number" step="0.01" min="0" wire:model="ac_price"
+                        label="AC Seat Price (INR)" required />
+                </div>
+
+                <div class="grid gap-4 md:grid-cols-2">
+                    <flux:input type="time" wire:model="open_time" label="Opening time"
+                        required />
+                    <flux:input type="time" wire:model="close_time" label="Closing time"
+                        required />
                 </div>
 
                 <div class="rounded-xl bg-zinc-50 p-4 dark:bg-zinc-800/80">
@@ -493,7 +528,8 @@ new class extends Component {
                     <div class="mt-3 grid gap-3 md:grid-cols-2">
                         <div>
                             <flux:text class="text-sm">{{ __('Normal') }}</flux:text>
-                            <flux:heading size="sm">INR {{ number_format((float) $normal_price, 2) }}</flux:heading>
+                            <flux:heading size="sm">INR {{ number_format((float) $normal_price, 2) }}
+                            </flux:heading>
                         </div>
                         <div>
                             <flux:text class="text-sm">{{ __('AC') }}</flux:text>
@@ -535,7 +571,8 @@ new class extends Component {
 
                 @if (auth()->user()->can('edit_library_shift'))
                     <div class="flex items-end">
-                        <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted" wire:click="generateShifts">
+                        <flux:button wire:confirm="Are you sure to generate shifts? Previous shifts will be deleted"
+                            wire:click="generateShifts">
                             {{ __('Generate') }}
                         </flux:button>
                     </div>

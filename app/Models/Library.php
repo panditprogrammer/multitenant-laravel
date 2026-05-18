@@ -31,8 +31,6 @@ class Library extends Model
     // cast values to appropriate types 
     protected $casts = [
         'is_active' => 'boolean',
-        'open_time' => 'datetime:H:i',
-        'close_time' => 'datetime:H:i',
         'normal_price' => 'decimal:2',
         'ac_price' => 'decimal:2',
     ];
